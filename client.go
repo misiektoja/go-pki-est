@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -218,7 +219,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 	// See https://pkg.go.dev/crypto/tls#ConnectionState.TLSUnique.
 	crBs := r.Raw
 	if tlsu := conn.ConnectionState().TLSUnique; tlsu != nil && c.SigningKey != nil {
-		crBs, err = c.addChallengePassword(r.Raw, string(base64Encode(tlsu)))
+		crBs, err = c.addChallengePassword(r.Raw, base64.StdEncoding.EncodeToString(tlsu))
 		if err != nil {
 			return nil, err
 		}
@@ -512,9 +513,19 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 		return nil, err
 	}
 
+	// Rebuild extensionRequest from Extensions to preserve critical values.
 	cr := x509util.CertificateRequest{
-		CertificateRequest: *stdCsr,
-		ChallengePassword:  challengePassword,
+		CertificateRequest: x509.CertificateRequest{
+			RawSubject:         stdCsr.RawSubject,
+			ExtraExtensions:    stdCsr.Extensions,
+			SignatureAlgorithm: stdCsr.SignatureAlgorithm,
+		},
+		ChallengePassword: challengePassword,
+	}
+	for _, attr := range stdCsr.Attributes {
+		if !attr.Type.Equal(oidExtensionRequest) {
+			cr.Attributes = append(cr.Attributes, attr)
+		}
 	}
 	crBs, err := x509util.CreateCertificateRequest(rand.Reader, &cr, c.SigningKey)
 	return crBs, err
