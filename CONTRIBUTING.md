@@ -35,3 +35,22 @@ Every change must comply with the Developer Certificate of Origin 1.1. Use `git 
 ## Compatibility
 
 The module uses semantic versioning. Versions before v1.0.0 may change the API in a minor release. [CHANGELOG.md](CHANGELOG.md) describes every change that affects callers, including any that needs a code change.
+
+## Releases
+
+[CHANGELOG.md](CHANGELOG.md) has one section per version, dated on the release day. Before tagging, run the release check on `main`:
+
+```bash
+GLOBALSIGN_EST_SKIP=hsm,tpm VERSION=v1.1.0 make release-check
+```
+
+It tests an export of `HEAD` and imports it from a separate module, so it catches files that are untracked or only present locally. A release starts when a version tag reachable from `main` is pushed:
+
+```bash
+git tag -s v1.1.0 -m 'v1.1.0'
+git push origin main v1.1.0
+```
+
+The release workflow repeats the check on the tag, builds source archives, an SBOM and checksums, attests their provenance and creates a draft release with the changelog section as its description. Review the draft and publish it. Do not draft a release in the GitHub UI. That creates the tag and the workflow refuses to rebuild a published release.
+
+Push only the new tag. Clones made from globalsign/est hold its `v1.0.x` tags. They declare the old module path, so `go get` cannot fetch them under this one.
