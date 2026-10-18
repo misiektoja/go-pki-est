@@ -64,15 +64,16 @@ endpoints. These `ServerConfig` fields let the host take decisions the library c
 * `CheckBasicAuth` runs for every enrollment request, also without an `Authorization` header, so
   the host can accept a TLS client certificate instead of a password. Returning an `Error` with
   status 403 or 429 sends that status as is, with its `Retry-After` value. Other errors answer 401.
-* `CheckCSRSignature` replaces the PKCS#10 signature check, for algorithms `crypto/x509` cannot
-  verify, such as composite ML-DSA.
+* `CheckCSRSignature` replaces the PKCS#10 signature check of enrollment and reenrollment, for
+  algorithms `crypto/x509` cannot verify, such as composite ML-DSA.
 * `Refusals` receives the requests the server refused before asking the CA, such as a wrong
   content type, a malformed request or a renewal whose subject changed. Use it for audit records
   or rate limits.
 * `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
 
 `/serverkeygen` returns any PKCS#8 key the CA provides, including algorithms `crypto/x509` cannot
-parse, such as ML-KEM.
+parse, such as ML-KEM. It does not check the request's signature, because RFC 7030 section 4.4.1
+tells the server to ignore the public key and signature of that request.
 
 ## Quickstart
 
