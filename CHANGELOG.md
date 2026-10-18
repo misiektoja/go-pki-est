@@ -8,7 +8,23 @@ Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
 The first release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
 module path. It fixes client timeouts, the TLS 1.2 proof-of-possession password, server error
 responses and several `estclient` and `estserver` defects. The server no longer trusts
-client-supplied address headers unless configured to.
+client-supplied address headers unless configured to. New `ServerConfig` fields let a host
+application authenticate by client certificate, verify other signature algorithms and record
+refused requests.
+
+### Added
+- **Host authentication results.** `CheckBasicAuth` runs for every enrollment request, also
+  without an `Authorization` header, so a host can accept a TLS client certificate. An `Error`
+  with status 403 or 429 is sent as is, with its `Retry-After` value. Other errors still answer
+  401 with a Basic challenge.
+- **`ServerConfig.CheckCSRSignature`** replaces the PKCS#10 signature check, for algorithms
+  `crypto/x509` cannot verify. A request whose algorithm the default check does not support gets
+  a 400 that says so.
+- **`ServerConfig.Refusals`** receives each request the server refused before asking the CA, with
+  the operation, the additional path segment, the status and the reason. Authentication failures
+  and CA errors are not reported.
+- **`ServerConfig.OmitTransferEncoding`** leaves the `Content-Transfer-Encoding` header out of
+  responses and their parts. Bodies stay base64 encoded.
 
 ### Changed
 - **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`, so only
@@ -34,8 +50,15 @@ client-supplied address headers unless configured to.
 - **Server error responses.** A recovered panic answers 500 instead of an empty 200. A `/tpmenroll`
   request with missing parts gets 400. Reenrollment over plain HTTP gets 403.
 - **Request handling.** `/tpmenroll` ignores `Content-Transfer-Encoding` on its parts like the other
-  operations. A request over the body limit gets 413 instead of 500. Bracketed IPv6 entries in
-  `AllowedHosts`, such as `[::1]`, match. Multipart errors name the right part.
+  operations. Base64 bodies may contain spaces and tabs as well as line breaks, as RFC 8951 asks. A
+  request over the body limit gets 413 instead of 500. Bracketed IPv6 entries in `AllowedHosts`,
+  such as `[::1]`, match. Multipart errors name the right part. A request over `RateLimit` gets
+  `Retry-After: 1` with its 429.
+- **Reenrollment trust.** When `/cacerts` holds no self-signed certificate, reenrollment client
+  certificates are no longer checked against the operating system's root store. They must chain to
+  a self-signed certificate in the `/cacerts` response.
+- **`/serverkeygen`** returns PKCS#8 keys of algorithms `crypto/x509` cannot parse, such as ML-KEM,
+  instead of failing with 500.
 - **`estclient`.** Boolean flags set to false, such as `-insecure=false`, are no longer treated as
   true. TPM key paths resolve against the configuration file's directory. A missing TPM private key
   setting or HSM `key_id` reports an error instead of crashing. `serverkeygen` and `tpmenroll`
