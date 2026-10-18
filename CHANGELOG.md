@@ -10,7 +10,7 @@ module path. It fixes client timeouts, the TLS 1.2 proof-of-possession password,
 challenge libest and Bouncy Castle need, server error responses and several `estclient` and `estserver` defects. The server no longer trusts
 client-supplied address headers unless configured to. New `ServerConfig` fields let a host
 application authenticate by client certificate, verify other signature algorithms and record
-refused requests.
+refused requests. The server accepts TLS-SRP logins and `estserver` can listen over TLS-SRP.
 
 ### Added
 - **Host authentication results.** `CheckBasicAuth` runs for every enrollment request, also
@@ -25,6 +25,13 @@ refused requests.
   and CA errors are not reported.
 - **`ServerConfig.OmitTransferEncoding`** leaves the `Content-Transfer-Encoding` header out of
   responses and their parts. Bodies stay base64 encoded.
+- **TLS-SRP logins.** A host passes the username of a TLS-SRP connection with `WithSRPUsername`.
+  `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`. `/simplereenroll` accepts
+  such a request without a client certificate and calls `CA.Reenroll` with a nil certificate, as
+  libest does. The request log shows these requests as `https`.
+- **`estserver` TLS-SRP listener.** The `tls_srp` setting serves EST on a second port over TLS 1.2
+  with the SRP AES cipher suites, using the users of an OpenSSL srpvfile. Unknown users fail like
+  a wrong password when `unknown_user_seed` is set and get `unknown_psk_identity` otherwise.
 
 ### Changed
 - **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`, so only
