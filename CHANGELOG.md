@@ -1,6 +1,47 @@
 # Changelog
 
-## [Unreleased]
+Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
+[globalsign/est](https://github.com/globalsign/est). Its v1.0.7 release has no entry here.
+
+## [1.1.0] - TBD
+
+The first release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
+module path. It fixes client timeouts, the TLS 1.2 proof-of-possession password, server error
+responses and several `estclient` and `estserver` defects. The server no longer trusts
+client-supplied address headers unless configured to.
+
+### Changed
+- **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`, so only
+  import paths change.
+- **Go 1.27.1** or newer is required.
+- **Proxy address headers** (`X-Real-IP` and `X-Forwarded-For`) are trusted only when
+  `ServerConfig.TrustProxyHeaders` or the `estserver` setting `trust_proxy_headers` is true. Both
+  default to false, so the server sees the connection's peer address. Deployments that rely on
+  forwarded addresses must enable the setting. Enable it only behind a proxy that removes or
+  overwrites both headers.
+- **`User-Agent` and `Server` headers** and the `version` output name go-pki-est instead of
+  GlobalSign.
+- **`estclient serverkeygen -keyout`** removes group and other read and write permissions from an
+  existing output file on Unix before writing the private key. This also removes group access that
+  was set on purpose. Windows ACLs are unchanged.
+
+### Fixed
+- **Client timeouts** cover connection setup, so a stalled TLS handshake no longer outlives the
+  request context or `estclient -timeout`. Each operation closes its connection.
+- **Proof of possession over TLS 1.2.** The `tls-unique` challenge password no longer ends with a
+  line break, so it matches the value RFC 7030 section 3.5 defines. Adding it keeps the CSR's
+  critical extensions and its other supported attributes.
+- **Server error responses.** A recovered panic answers 500 instead of an empty 200. A `/tpmenroll`
+  request with missing parts gets 400. Reenrollment over plain HTTP gets 403.
+- **Request handling.** `/tpmenroll` ignores `Content-Transfer-Encoding` on its parts like the other
+  operations. A request over the body limit gets 413 instead of 500. Bracketed IPv6 entries in
+  `AllowedHosts`, such as `[::1]`, match. Multipart errors name the right part.
+- **`estclient`.** Boolean flags set to false, such as `-insecure=false`, are no longer treated as
+  true. TPM key paths resolve against the configuration file's directory. A missing TPM private key
+  setting or HSM `key_id` reports an error instead of crashing. `serverkeygen` and `tpmenroll`
+  report failures to write the key or certificate.
+- **`estserver`** exits with an error when it cannot listen instead of running without a listener.
+  A TLS configuration without `listen_address` keeps the default port 8443 instead of 443.
 
 ## [1.0.6] - 2021-02-21
 ### Added
@@ -30,7 +71,6 @@
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/globalsign/est/compare/v1.0.6...HEAD
 [1.0.6]: https://github.com/globalsign/est/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/globalsign/est/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/globalsign/est/compare/v1.0.3...v1.0.4
