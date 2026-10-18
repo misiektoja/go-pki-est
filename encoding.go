@@ -42,8 +42,16 @@ func base64Encode(src []byte) []byte {
 	return breakLines(enc, base64LineLength)
 }
 
-// base64Decode base64-decodes a slice of bytes using standard encoding.
+// base64Decode base64-decodes a slice of bytes using standard encoding. It
+// ignores spaces, tabs and line breaks, which RFC 8951 section 3.1 asks
+// receivers to tolerate.
 func base64Decode(src []byte) ([]byte, error) {
+	src = bytes.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, src)
 	dec := make([]byte, base64.StdEncoding.DecodedLen(len(src)))
 	n, err := base64.StdEncoding.Decode(dec, src)
 	if err != nil {
