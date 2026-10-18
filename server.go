@@ -70,6 +70,15 @@ type ServerConfig struct {
 	// the /healthcheck endpoint will be blocked.
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
 
+	// PasswordRenewal lets /simplereenroll accept a request without a TLS
+	// client certificate when it carries HTTP Basic credentials with a
+	// username and CheckBasicAuth accepts them. RFC 7030 section 2.3 allows
+	// this when the certificate being renewed cannot be used for TLS client
+	// authentication, such as a composite ML-DSA certificate. The CA receives
+	// a nil certificate and decides which certificate is renewed. NewRouter
+	// refuses it without CheckBasicAuth. It defaults to false.
+	PasswordRenewal bool
+
 	// CheckCSRSignature optionally verifies the signature of each PKCS#10
 	// request to /simpleenroll and /simplereenroll. /serverkeygen ignores the
 	// signature, as RFC 7030 section 4.4.1 requires. If nil, the server uses
@@ -109,6 +118,7 @@ const (
 	ctxKeyRefusals
 	ctxKeyOmitTransferEncoding
 	ctxKeySRPUsername
+	ctxKeyPasswordRenewal
 )
 
 // Server constants.
@@ -206,8 +216,22 @@ func sendTransferEncoding(ctx context.Context) bool {
 	return !omit
 }
 
+// passwordRenewal reports whether a renewal request without a client
+// certificate signs in with the HTTP Basic credentials CheckBasicAuth accepted.
+// An empty username is refused, because CheckBasicAuth also runs for requests
+// without credentials.
+func passwordRenewal(r *http.Request) bool {
+	enabled, _ := r.Context().Value(ctxKeyPasswordRenewal).(bool)
+	username, _, ok := r.BasicAuth()
+	return enabled && ok && username != ""
+}
+
 // NewRouter creates a new EST server mux.
 func NewRouter(cfg *ServerConfig) (http.Handler, error) {
+	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil {
+		return nil, errors.New("PasswordRenewal requires CheckBasicAuth")
+	}
+
 	r := chi.NewRouter()
 
 	timeout := defaultTimeout
@@ -232,6 +256,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.WithValue(ctxKeyRefusals, cfg.Refusals))
 	r.Use(middleware.WithValue(ctxKeyCSRCheck, cfg.CheckCSRSignature))
 	r.Use(middleware.WithValue(ctxKeyOmitTransferEncoding, cfg.OmitTransferEncoding))
+	r.Use(middleware.WithValue(ctxKeyPasswordRenewal, cfg.PasswordRenewal))
 	r.Use(addServerHeader)
 	r.Use(addSecureHeaders)
 	if len(cfg.AllowedHosts) > 0 {
@@ -364,12 +389,14 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 
 	renew := isReenroll(ctx)
 
-	// A client that signed in with TLS-SRP has no certificate to compare the
-	// request with. libest accepts its renewal and leaves the choice of the
-	// certificate being renewed to the CA, so this server does the same.
-	srpRenewal := renew && (r.TLS == nil || len(r.TLS.PeerCertificates) == 0) && SRPUsernameFromContext(ctx) != ""
+	// A client that sent no certificate and signed in with TLS-SRP or with a
+	// password under PasswordRenewal has nothing to compare the request with.
+	// The choice of the certificate being renewed is left to the CA. libest
+	// does the same for TLS-SRP.
+	noCert := r.TLS == nil || len(r.TLS.PeerCertificates) == 0
+	loginRenewal := renew && noCert && (SRPUsernameFromContext(ctx) != "" || passwordRenewal(r))
 
-	if renew && !srpRenewal {
+	if renew && !loginRenewal {
 
 		// Per RFC7030 4.2.2, for /simplereenroll the Subject and
 		// SubjectAltName fields in the CSR MUST be identical to the
@@ -397,10 +424,10 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		// for a /simplereenroll operation, and we therefore require a client
 		// to use an existing certificate for renew operations.
 		//
-		// Apart from TLS-SRP logins, this server does not support clients which
-		// do not support TLS client authentication for renew operations.
+		// Apart from TLS-SRP logins and PasswordRenewal, this server requires
+		// TLS client authentication for renew operations.
 
-		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		if noCert {
 			refuse(w, r, logMsgRenewalRefused, errNoClientCertificate)
 			return
 		}
@@ -454,7 +481,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	var cert *x509.Certificate
 	if renew {
 		var renewed *x509.Certificate
-		if !srpRenewal {
+		if !loginRenewal {
 			renewed = r.TLS.PeerCertificates[0]
 		}
 		cert, err = caFromContext(ctx).Reenroll(ctx, renewed, csr, aps, r)
