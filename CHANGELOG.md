@@ -6,11 +6,14 @@ Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
 ## [1.1.0] - 2026-10-19
 
 First release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
-module path. Its version numbers continue from v1.0.7. It adds TLS-SRP logins and hooks for host
-authentication. It fixes client timeouts, password sign-in from libest and Bouncy Castle and
-several server and command line defects.
+module path. Its version numbers continue from v1.0.7. It adds TLS-SRP logins, password renewal
+and hooks for host authentication. It fixes client timeouts, password sign-in from libest and
+Bouncy Castle and several server and command line defects.
 
 ### Added
+- **Password renewal.** With `ServerConfig.PasswordRenewal`, `/simplereenroll` accepts a password
+  instead of a client certificate, for certificates that cannot be used in TLS, such as composite
+  ML-DSA. It is off by default and needs `CheckBasicAuth`.
 - **TLS-SRP logins.** `WithSRPUsername` passes the username of a TLS-SRP connection to
   `CheckBasicAuth` and the CA. `/simplereenroll` accepts such a request without a client
   certificate. The `estserver` setting `tls_srp` serves a second port from an OpenSSL srpvfile.
