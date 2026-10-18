@@ -30,10 +30,6 @@ type estError struct {
 
 // Internal error values.
 var (
-	errAuthRequired = &estError{
-		status: http.StatusUnauthorized,
-		desc:   "authorization required",
-	}
 	errBodyParse = &estError{
 		status: http.StatusBadRequest,
 		desc:   "unable to parse request body",

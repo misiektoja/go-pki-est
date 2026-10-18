@@ -808,7 +808,9 @@ func requireBasicAuth(
 				// result, Header().Get does not find the entry.
 				w.Header()[wwwAuthenticateHeader] = []string{fmt.Sprintf(`Basic realm="estserver@%s"`,
 					url.QueryEscape(reqHost))}
-				errAuthRequired.Write(w)
+				// The challenge carries no content. Bouncy Castle closes it without reading and fails
+				// when content is left unread.
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
