@@ -70,10 +70,12 @@ type ServerConfig struct {
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
 
 	// CheckCSRSignature optionally verifies the signature of each PKCS#10
-	// request. If nil, the server uses (*x509.CertificateRequest).CheckSignature,
-	// which refuses algorithms crypto/x509 cannot verify, such as composite
-	// ML-DSA. crypto/x509 leaves PublicKey nil for keys it does not know. An
-	// error that implements Error is sent as is. Any other error answers 400.
+	// request to /simpleenroll and /simplereenroll. /serverkeygen ignores the
+	// signature, as RFC 7030 section 4.4.1 requires. If nil, the server uses
+	// (*x509.CertificateRequest).CheckSignature, which refuses algorithms
+	// crypto/x509 cannot verify, such as composite ML-DSA. crypto/x509 leaves
+	// PublicKey nil for keys it does not know. An error that implements Error
+	// is sent as is. Any other error answers 400.
 	CheckCSRSignature func(csr *x509.CertificateRequest) error
 
 	// Refusals optionally receives the requests the server refuses itself,
@@ -441,7 +443,9 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	aps := chi.URLParam(r, apsParamName)
 
-	csr, err := readCSRRequest(r.Body, csrCheckFromContext(ctx))
+	// RFC 7030 section 4.4.1: the server MUST ignore the public key values and
+	// the signature in the CSR, so the signature is not checked.
+	csr, err := readCSRRequest(r.Body, nil)
 	if err != nil {
 		refuse(w, r, logMsgReadBodyFailed, err)
 		return
