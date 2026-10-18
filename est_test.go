@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -43,12 +44,13 @@ import (
 	"time"
 
 	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/smallstep/scep/x509util"
 	"go.mozilla.org/pkcs7"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/basiclogger"
-	"github.com/globalsign/est/internal/mockca"
-	"github.com/globalsign/est/internal/tpm"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/basiclogger"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
+	"github.com/misiektoja/go-pki-est/internal/tpm"
 )
 
 // Test constants.
@@ -239,6 +241,12 @@ func TestEnroll(t *testing.T) {
 			status:     http.StatusOK,
 		},
 		{
+			name:       "OK/ML-DSA-65",
+			commonName: "Jean Doe",
+			key:        mustGenerateMLDSAPrivateKey(t),
+			status:     http.StatusOK,
+		},
+		{
 			name:       "TriggerError/Deferred",
 			aps:        triggerErrorsAPS,
 			commonName: "Trigger Error Deferred",
@@ -351,6 +359,145 @@ func TestEnroll(t *testing.T) {
 	}
 }
 
+// TestEnrollChallengePassword checks channel binding and preservation of CSR data.
+func TestEnrollChallengePassword(t *testing.T) {
+	t.Parallel()
+
+	var testcases = []struct {
+		name string
+		tmpl *x509.CertificateRequest
+	}{
+		{
+			name: "SubjectOnly",
+			tmpl: &x509.CertificateRequest{
+				Subject: pkix.Name{CommonName: "Jane Doe"},
+			},
+		},
+		{
+			name: "SubjectAltName",
+			tmpl: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jane Doe"},
+				DNSNames: []string{"jane.example.com"},
+			},
+		},
+		{
+			name: "CriticalExtension",
+			tmpl: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jane Doe"},
+				DNSNames: []string{"jane.example.com"},
+				Attributes: []pkix.AttributeTypeAndValueSET{
+					{
+						Type: asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 55555, 1},
+						Value: [][]pkix.AttributeTypeAndValue{{{
+							Type:  asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 55555, 2},
+							Value: "enrollment-policy",
+						}}},
+					},
+				},
+				ExtraExtensions: []pkix.Extension{
+					{
+						Id:       asn1.ObjectIdentifier{2, 5, 29, 15},
+						Critical: true,
+						Value:    []byte{0x03, 0x02, 0x07, 0x80},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			type received struct {
+				csr       *x509.CertificateRequest
+				tlsUnique []byte
+			}
+			ch := make(chan received, 1)
+
+			// tls-unique is only available up to TLS 1.2.
+			s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := ioutil.ReadAll(r.Body)
+				der, _ := base64.StdEncoding.DecodeString(string(body))
+				csr, _ := x509.ParseCertificateRequest(der)
+				ch <- received{csr: csr, tlsUnique: r.TLS.TLSUnique}
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			s.TLS = &tls.Config{MaxVersion: tls.VersionTLS12}
+			s.StartTLS()
+			defer s.Close()
+
+			key := mustGenerateECPrivateKey(t)
+
+			der, err := x509.CreateCertificateRequest(rand.Reader, tc.tmpl, key)
+			if err != nil {
+				t.Fatalf("failed to create certificate request: %v", err)
+			}
+
+			csr, err := x509.ParseCertificateRequest(der)
+			if err != nil {
+				t.Fatalf("failed to parse certificate request: %v", err)
+			}
+
+			client := est.Client{
+				Host:               strings.TrimPrefix(s.URL, "https://"),
+				InsecureSkipVerify: true,
+				SigningKey:         key,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+			defer cancel()
+
+			_, err = client.Enroll(ctx, csr)
+			var estErr est.Error
+			if !errors.As(err, &estErr) || estErr.StatusCode() != http.StatusServiceUnavailable {
+				t.Fatalf("got enrollment error %v, want HTTP 503", err)
+			}
+
+			var got received
+			select {
+			case got = <-ch:
+			case <-ctx.Done():
+				t.Fatal("server did not receive the certificate request")
+			}
+			if got.csr == nil {
+				t.Fatal("server failed to parse certificate request")
+			}
+
+			if err := got.csr.CheckSignature(); err != nil {
+				t.Fatalf("failed to verify certificate request signature: %v", err)
+			}
+
+			pw, err := x509util.ParseChallengePassword(got.csr.Raw)
+			if err != nil {
+				t.Fatalf("failed to parse challenge password: %v", err)
+			}
+
+			if want := base64.StdEncoding.EncodeToString(got.tlsUnique); pw != want {
+				t.Fatalf("got challenge password %q, want %q", pw, want)
+			}
+
+			if !reflect.DeepEqual(got.csr.Extensions, csr.Extensions) {
+				t.Fatalf("got extensions %v, want %v", got.csr.Extensions, csr.Extensions)
+			}
+			for _, want := range tc.tmpl.Attributes {
+				found := false
+				for _, attr := range got.csr.Attributes {
+					if reflect.DeepEqual(attr, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("missing CSR attribute %v", want)
+				}
+			}
+		})
+	}
+}
+
 func TestReenroll(t *testing.T) {
 	t.Parallel()
 
@@ -396,6 +543,21 @@ func TestReenroll(t *testing.T) {
 				DNSNames: []string{"john-doe.domain"},
 			},
 			key:    mustGenerateRSAPrivateKey(t),
+			status: http.StatusOK,
+		},
+		{
+			// An ML-DSA client certificate needs TLS 1.3, which the test
+			// client and server negotiate by default.
+			name: "OK/ML-DSA-65",
+			ecsr: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jo Doe"},
+				DNSNames: []string{"jo-doe.domain"},
+			},
+			rcsr: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jo Doe"},
+				DNSNames: []string{"jo-doe.domain"},
+			},
+			key:    mustGenerateMLDSAPrivateKey(t),
 			status: http.StatusOK,
 		},
 		{
@@ -499,6 +661,50 @@ func TestReenroll(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+// panicCA is a CA which panics when asked for its CA certificates.
+type panicCA struct {
+	est.CA
+}
+
+func (panicCA) CACerts(context.Context, string, *http.Request) ([]*x509.Certificate, error) {
+	panic("test panic")
+}
+
+func TestServerRecoversFromPanic(t *testing.T) {
+	t.Parallel()
+
+	r, err := est.NewRouter(&est.ServerConfig{CA: panicCA{}})
+	if err != nil {
+		t.Fatalf("failed to create new router: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, cacertsEndpoint, nil))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("got status code %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestReenrollWithoutTLS(t *testing.T) {
+	t.Parallel()
+
+	r, err := est.NewRouter(&est.ServerConfig{CA: panicCA{}})
+	if err != nil {
+		t.Fatalf("failed to create new router: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, reenrollEndpoint, bytes.NewReader(mustMakeBase64CSR(t, "Jane Doe")))
+	req.Header.Set(typeHeader, mimeTypePKCS10)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got status code %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
 
@@ -713,6 +919,72 @@ func TestTPMEnroll(t *testing.T) {
 	}
 }
 
+// TestTrustProxyHeaders checks the opt-in and precedence of proxy address headers.
+func TestTrustProxyHeaders(t *testing.T) {
+	t.Parallel()
+
+	var testcases = []struct {
+		name   string
+		trust  bool
+		realIP string
+		want   string
+	}{
+		{
+			name: "Disabled",
+			want: "192.0.2.1:1234",
+		},
+		{
+			name:   "DisabledBothHeaders",
+			realIP: "203.0.113.2",
+			want:   "192.0.2.1:1234",
+		},
+		{
+			name:  "Enabled",
+			trust: true,
+			want:  "203.0.113.1",
+		},
+		{
+			name:   "RealIPPrecedence",
+			trust:  true,
+			realIP: "203.0.113.2",
+			want:   "203.0.113.2",
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got string
+			r, err := est.NewRouter(&est.ServerConfig{
+				CheckBasicAuth: func(_ context.Context, r *http.Request, _, _, _ string) error {
+					got = r.RemoteAddr
+					return nil
+				},
+				TrustProxyHeaders: tc.trust,
+			})
+			if err != nil {
+				t.Fatalf("failed to create new router: %v", err)
+			}
+
+			// httptest.NewRequest sets RemoteAddr to 192.0.2.1:1234.
+			req := httptest.NewRequest(http.MethodGet, "/healthcheck", nil)
+			req.Header.Set("X-Forwarded-For", "203.0.113.1")
+			if tc.realIP != "" {
+				req.Header.Set("X-Real-IP", tc.realIP)
+			}
+			r.ServeHTTP(httptest.NewRecorder(), req)
+
+			if got != tc.want {
+				t.Fatalf("got remote address %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestServerErrors checks the HTTP status and response body for invalid requests.
 func TestServerErrors(t *testing.T) {
 	t.Parallel()
 
@@ -820,6 +1092,75 @@ func TestServerErrors(t *testing.T) {
 			errText: "500 internal server error\n",
 		},
 		{
+			name:   "Enroll/BodyTooLarge",
+			path:   enrollEndpoint,
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{mimeTypePKCS10},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body:    bytes.Repeat([]byte("A"), 1<<17),
+			status:  http.StatusRequestEntityTooLarge,
+			errText: "413 request body too large\n",
+		},
+		{
+			name:   "TPMEnroll/HeaderTooLarge",
+			path:   "/.well-known/est/tpmenroll",
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{"multipart/mixed; boundary=parts"},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body: []byte("--parts\r\nContent-Type: application/pkcs10\r\nX-Padding: " +
+				strings.Repeat("A", 1<<17) + "\r\n\r\nAAAA\r\n--parts--\r\n"),
+			status:  http.StatusRequestEntityTooLarge,
+			errText: "413 request body too large\n",
+		},
+		{
+			name:   "TPMEnroll/PreambleTooLarge",
+			path:   "/.well-known/est/tpmenroll",
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{"multipart/mixed; boundary=parts"},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body: []byte(strings.Repeat("padding\r\n", 1<<14) +
+				"--parts\r\nContent-Type: application/pkcs10\r\n\r\nAAAA\r\n--parts--\r\n"),
+			status:  http.StatusRequestEntityTooLarge,
+			errText: "413 request body too large\n",
+		},
+		{
+			name:   "TPMEnroll/NoTransferEncoding",
+			path:   "/.well-known/est/tpmenroll",
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{"multipart/mixed; boundary=parts"},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body: []byte("--parts\r\nContent-Type: application/pkcs10\r\n\r\n" +
+				string(mustMakeBase64CSR(t, "Jane Doe")) +
+				"\r\n--parts\r\nContent-Type: text/plain\r\n\r\nnot a certificate\r\n--parts--\r\n"),
+			status:  http.StatusUnsupportedMediaType,
+			errText: "415 Content-Type of second part must be application/pkcs7-mime\n",
+		},
+		{
+			name:   "TPMEnroll/WrongPartType",
+			path:   "/.well-known/est/tpmenroll",
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{"multipart/mixed; boundary=parts"},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body:    []byte("--parts\r\nContent-Type: text/plain\r\n\r\nnot a CSR\r\n--parts--\r\n"),
+			status:  http.StatusUnsupportedMediaType,
+			errText: "415 Content-Type of first part must be application/pkcs10\n",
+		},
+		{
 			name:   "HealthCheck/NoAuth",
 			path:   "/healthcheck",
 			method: http.MethodGet,
@@ -827,8 +1168,7 @@ func TestServerErrors(t *testing.T) {
 				authorizationHeader: []string{"baad"},
 				hostHeader:          []string{testDomain + ":666"},
 			},
-			status:  http.StatusUnauthorized,
-			errText: "401 authorization required\n",
+			status: http.StatusUnauthorized,
 		},
 		{
 			name:   "HealthCheck/BadHost",
@@ -840,6 +1180,20 @@ func TestServerErrors(t *testing.T) {
 			},
 			status:  http.StatusBadRequest,
 			errText: "400 host not allowed\n",
+		},
+		{
+			name:   "TPMEnroll/MissingParts",
+			path:   "/.well-known/est/tpmenroll",
+			method: http.MethodPost,
+			headers: http.Header{
+				typeHeader:          []string{"multipart/mixed; boundary=parts"},
+				authorizationHeader: []string{authorizationValue},
+				hostHeader:          []string{testDomain},
+			},
+			body: []byte("--parts\r\nContent-Type: application/pkcs10\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+				string(mustMakeBase64CSR(t, "Jane Doe")) + "\r\n--parts--\r\n"),
+			status:  http.StatusBadRequest,
+			errText: "400 expected 4 parts in request body, got 1\n",
 		},
 	}
 
@@ -878,6 +1232,70 @@ func TestServerErrors(t *testing.T) {
 
 			if got := string(data); got != tc.errText {
 				t.Fatalf("got error text %q, want %q", got, tc.errText)
+			}
+		})
+	}
+}
+
+func TestAllowedHosts(t *testing.T) {
+	t.Parallel()
+
+	var testcases = []struct {
+		name    string
+		allowed string
+		host    string
+		status  int
+	}{
+		{
+			name:    "IPv6WithBrackets",
+			allowed: "[::1]",
+			host:    "[::1]:8443",
+			status:  http.StatusOK,
+		},
+		{
+			name:    "IPv6WithoutBrackets",
+			allowed: "::1",
+			host:    "[::1]:8443",
+			status:  http.StatusOK,
+		},
+		{
+			name:    "IPv6WithoutPort",
+			allowed: "[::1]",
+			host:    "[::1]",
+			status:  http.StatusOK,
+		},
+		{
+			name:    "NotAllowed",
+			allowed: "localhost",
+			host:    "[::1]:8443",
+			status:  http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := est.NewRouter(&est.ServerConfig{
+				AllowedHosts: []string{tc.allowed},
+				CheckBasicAuth: func(context.Context, *http.Request, string, string, string) error {
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("failed to create new router: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/healthcheck", nil)
+			req.Host = tc.host
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != tc.status {
+				t.Fatalf("got status code %d, want %d", w.Code, tc.status)
 			}
 		})
 	}
@@ -1029,6 +1447,18 @@ func mustGenerateRSAPrivateKey(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
+// mustGenerateMLDSAPrivateKey returns a new ML-DSA-65 private key.
+func mustGenerateMLDSAPrivateKey(t *testing.T) *mldsa.PrivateKey {
+	t.Helper()
+
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+
+	return key
+}
+
 func verifyPublicKey(t *testing.T, pub, priv interface{}) {
 	t.Helper()
 
@@ -1039,6 +1469,9 @@ func verifyPublicKey(t *testing.T, pub, priv interface{}) {
 		wantPublic = k.Public()
 
 	case *ecdsa.PrivateKey:
+		wantPublic = k.Public()
+
+	case *mldsa.PrivateKey:
 		wantPublic = k.Public()
 
 	default:

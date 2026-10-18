@@ -50,7 +50,7 @@ const (
 	appName        = "estclient"
 	defaultTimeout = time.Second * 15
 	sepChar        = ","
-	versionString  = "1.0.6"
+	versionString  = "1.1.0"
 )
 
 // Flag name constants.
@@ -391,7 +391,7 @@ func usageError(w io.Writer, line int) {
 
 // version outputs version information.
 func version(w io.Writer, set *flag.FlagSet) error {
-	fmt.Fprintf(w, "GlobalSign EST Client %s\n", versionString)
+	fmt.Fprintf(w, "go-pki-est EST client %s\n", versionString)
 	return nil
 }
 

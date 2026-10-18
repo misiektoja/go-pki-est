@@ -1,50 +1,116 @@
-# est
+# go-pki-est
 
-[![GoDoc](https://godoc.org/github.com/globalsign/est?status.svg)](https://godoc.org/github.com/globalsign/est)
-[![Build Status](https://github.com/globalsign/est/actions/workflows/go.yml/badge.svg)](https://github.com/globalsign/est/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/globalsign/est)](https://goreportcard.com/report/github.com/globalsign/est)
+[![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-est.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-est)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml)
 
-An implementation of the Enrollment over Secure Transport (EST) certificate
-enrollment protocol as defined by [RFC7030](https://tools.ietf.org/html/rfc7030).
+Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
+defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 
-The implementation provides:
+* an EST client library
+* an `http.Handler` that serves EST in front of your CA (`NewRouter` and the `CA` interface)
+* `estclient`, a command line client built on the library
+* `estserver`, a server with a mock CA for testing and development
 
- * An EST client library;
- * An EST client command line utility using the client library; and
- * An EST server which can be used for testing and development purposes.
+## Contents
 
-The implementation is intended to be mostly feature-complete, including
-support for:
+* [Install](#install)
+* [Scope](#scope)
+* [Quickstart](#quickstart)
+* [Credits](#credits)
+* [Support and contributing](#support-and-contributing)
+* [License](#license)
 
- * The optional `/csrattrs` and `/serverkeygen` operations, with support for
-   server-generated private keys returned with or without additional
-   encryption
- * The optional additional path segment
- * Optional HTTP-based client authentication on top of certificate-based
-   TLS authentication
+## Install
 
-In addition, a non-standard operation is implemented enabling EST-like
-enrollment using the privacy preserving protocol for distributing credentials
-for keys on a Trusted Platform Module (TPM) 2.0 device, as described in Part 1,
-section 24 of the Trusted Platform Module 2.0 Library specification.
+```bash
+go get github.com/misiektoja/go-pki-est
+```
 
-## Installation
+The package name is `est`. Requires Go 1.27.2 or newer.
 
-    go install github.com/globalsign/est/cmd/estserver@latest
-    go install github.com/globalsign/est/cmd/estclient@latest
+The command line tools install with:
+
+```bash
+go install github.com/misiektoja/go-pki-est/cmd/estclient@latest
+```
+
+```bash
+go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
+```
+
+## Scope
+
+| Operation | Coverage |
+| --- | --- |
+| `/cacerts` | CA certificate distribution |
+| `/simpleenroll` and `/simplereenroll` | Enrollment and reenrollment with a PKCS#10 request |
+| `/serverkeygen` | Server-generated private keys, returned with or without additional encryption |
+| `/csrattrs` | CSR attributes |
+| `/tpmenroll` | Non-standard enrollment of TPM 2.0 keys with the credential protocol in Part 1, section 24 of the TPM 2.0 Library specification |
+| `/fullcmc` | Not implemented |
+
+Every operation accepts the optional additional path segment. The server can require HTTP Basic
+authentication on top of TLS client certificates. Following RFC 8951, receivers ignore the
+`Content-Transfer-Encoding` header and accept spaces, tabs and line breaks in base64. The server
+still sends the header unless `ServerConfig.OmitTransferEncoding` is set, because some clients
+reject it.
+
+### Embedding the server
+
+`NewRouter` returns an `http.Handler`, so a host application can serve EST next to its own
+endpoints. These `ServerConfig` fields let the host take decisions the library cannot:
+
+* `CheckBasicAuth` runs for every enrollment request, also without an `Authorization` header, so
+  the host can accept a TLS client certificate instead of a password. Returning an `Error` with
+  status 403 or 429 sends that status as is, with its `Retry-After` value. Other errors answer 401.
+* `CheckCSRSignature` replaces the PKCS#10 signature check of enrollment and reenrollment, for
+  algorithms `crypto/x509` cannot verify, such as composite ML-DSA.
+* `Refusals` receives the requests the server refused before asking the CA, such as a wrong
+  content type, a malformed request or a renewal whose subject changed. Use it for audit records
+  or rate limits.
+* `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
+* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a TLS client certificate.
+  RFC 7030 section 2.3 allows this when the certificate being renewed cannot be used for TLS.
+  `CheckBasicAuth` must accept the username and password. The CA receives a nil certificate and
+  decides which certificate is renewed. It is off by default.
+
+TLS-SRP (RFC 5054) signs a client in with a username and password during the TLS handshake. libest
+clients use it with `--srp`. A host that terminates TLS-SRP passes the username to the router with
+`WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
+`/simplereenroll` then accepts the request without a client certificate and calls `CA.Reenroll`
+with a nil certificate, as libest does. The CA decides which certificate is renewed. `estserver`
+serves the router over TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
+
+`/serverkeygen` returns any PKCS#8 key the CA provides, including algorithms `crypto/x509` cannot
+parse, such as ML-KEM. It does not check the request's signature, because RFC 7030 section 4.4.1
+tells the server to ignore the public key and signature of that request.
+
+### Post-quantum algorithms
+
+**ML-DSA** keys and certificates (FIPS 204, RFC 9881) work for enrollment, renewal and
+`/serverkeygen`, in the library and in `estclient`. They rely on `crypto/x509` and `crypto/tls`.
+The tests use ML-DSA-65. Limits:
+
+* An ML-DSA client certificate needs TLS 1.3, which has no `tls-unique` value. The client then
+  leaves out the challenge password that RFC 7030 section 3.5 builds from it.
+* **Composite ML-DSA** requests are accepted only through `CheckCSRSignature`, because
+  `crypto/x509` cannot verify them. The client cannot create them. No TLS library presents a
+  composite client certificate, so a composite certificate renews with `PasswordRenewal` or over
+  TLS-SRP.
+* **ML-KEM** keys cannot sign a PKCS#10 request, so they can only come from `/serverkeygen`.
 
 ## Quickstart
 
 ### Starting the server
 
-When started with no configuration file, the EST server listens on
-localhost:8443 and generates a random, transient Certificate Authority (CA)
-which can be used for testing:
+When started with no configuration file, the EST server listens on port 8443 on every interface and
+generates a random, transient Certificate Authority (CA) which can be used for testing:
 
     user@host:$ estserver &
     [1] 62405
 
-Refer to the documentation for more details on using a configuration file.
+`estserver -sampleconfig` prints a sample configuration file.
 
 ### Getting the CA certificates
 
@@ -80,20 +146,21 @@ explicit trust anchor we previously obtained:
 
 Using a configuration file, we can enroll with a private key resident on a
 hardware module, such as a hardware security module (HSM) or a Trusted Platform
-Module 2.0 (TPM) device. Refer to the documentation for more details.
+Module 2.0 (TPM) device. `estclient sampleconfig` prints a sample configuration file.
 
 ### Enforcing proof of possession
 
-If one would like to enforce the PoP as defined in [RFC 7030 section 3.5](https://www.rfc-editor.org/rfc/rfc7030#section-3.5), we have to pass the signing key to EST client so it can include the challenge password in the CSR and then sign it once again.  
+[RFC 7030 section 3.5](https://www.rfc-editor.org/rfc/rfc7030#section-3.5) binds the request to
+the TLS session by putting the `tls-unique` value in the CSR's challenge password. To add it, pass
+the key that signs the CSR so the client can sign the request again:
 
     user@host:$ estclient enroll -server localhost:8443 -explicit anchor.pem -csr csr.pem -signingkey key.pem -out cert.pem
 
-Reminder,
-
-* the `tls-unique` value mentioned in RFC 7030 is specific to TLS v1.2
-* the options `-key` and `-signingkey` are not necessarily the same
-  * `-key` is used for mTLS purpose like during an initial enroll
-  * `-signingkey` is the key signing the CSR and therefore the one to be enrolled
+* `tls-unique` exists only in TLS 1.2.
+* `-key` and `-signingkey` can differ. `-key` authenticates the TLS connection, as in an initial
+  enrollment. `-signingkey` signs the CSR and belongs to the key being enrolled.
+* The bundled test server does not check the challenge password. A CA implementation that needs the
+  binding must check it.
 
 ### Enrolling with a server-generated private key
 
@@ -128,3 +195,25 @@ use that chain to reenroll:
 Note that when we omit the `-csr` option when reenrolling, the EST client
 automatically generates a CSR for us by copying the subject field and subject
 alternative name extension from the certificate we're renewing.
+
+## Credits
+
+This project began as a fork of [globalsign/est](https://github.com/globalsign/est) by
+[GMO GlobalSign](https://www.globalsign.com/). The protocol implementation, both command line tools
+and the test server come from that project. The first fixes made here were offered upstream in
+[globalsign/est#59](https://github.com/globalsign/est/pull/59) to
+[globalsign/est#66](https://github.com/globalsign/est/pull/66).
+
+This fork is maintained separately so fixes and new features ship in its own releases without
+waiting for upstream review. Changes that suit upstream are still offered there. [NOTICE](NOTICE)
+records the attribution.
+
+## Support and contributing
+
+Report vulnerabilities privately as [SECURITY.md](SECURITY.md) describes. The
+[Contributing Guide](CONTRIBUTING.md) lists the development checks. [CHANGELOG.md](CHANGELOG.md)
+records the changes in each release.
+
+## License
+
+MIT License. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

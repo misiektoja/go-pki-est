@@ -58,11 +58,51 @@ type ServerConfig struct {
 	RateLimit int
 
 	// CheckBasicAuth is an optional callback function to check HTTP Basic
-	// Authentication credentials. A nil error means that authentication was
-	// successful, and a non-nil error means that it was not. If CheckBasicAuth
-	// is nil, then HTTP Basic Authentication is not required for any EST
-	// operation, but access to the /healthcheck endpoint will be blocked.
+	// Authentication credentials. It runs for every enrollment request, with
+	// empty credentials when the request has no Authorization header, so it
+	// can also accept a TLS client certificate from the request. A nil error
+	// means that authentication was successful. An error that implements Error
+	// with a status other than 401, such as 403 or 429, is sent as is with its
+	// Retry-After value. Any other error answers 401 with a Basic challenge.
+	// On a TLS-SRP connection, SRPUsernameFromContext(ctx) returns the
+	// username the client signed in with. If CheckBasicAuth is nil, then HTTP
+	// Basic Authentication is not required for any EST operation, but access to
+	// the /healthcheck endpoint will be blocked.
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
+
+	// PasswordRenewal lets /simplereenroll accept a request without a TLS
+	// client certificate when it carries HTTP Basic credentials with a
+	// username and CheckBasicAuth accepts them. RFC 7030 section 2.3 allows
+	// this when the certificate being renewed cannot be used for TLS client
+	// authentication, such as a composite ML-DSA certificate. The CA receives
+	// a nil certificate and decides which certificate is renewed. NewRouter
+	// refuses it without CheckBasicAuth. It defaults to false.
+	PasswordRenewal bool
+
+	// CheckCSRSignature optionally verifies the signature of each PKCS#10
+	// request to /simpleenroll and /simplereenroll. /serverkeygen ignores the
+	// signature, as RFC 7030 section 4.4.1 requires. If nil, the server uses
+	// (*x509.CertificateRequest).CheckSignature, which refuses algorithms
+	// crypto/x509 cannot verify, such as composite ML-DSA. crypto/x509 leaves
+	// PublicKey nil for keys it does not know. An error that implements Error
+	// is sent as is. Any other error answers 400.
+	CheckCSRSignature func(csr *x509.CertificateRequest) error
+
+	// Refusals optionally receives the requests the server refuses itself,
+	// before or instead of calling the CA.
+	Refusals RefusalRecorder
+
+	// OmitTransferEncoding leaves the Content-Transfer-Encoding header out of
+	// responses and their multipart parts. Bodies stay base64 encoded. RFC 8951
+	// tells receivers to ignore the header. Some clients fail when it is
+	// present.
+	OmitTransferEncoding bool
+
+	// TrustProxyHeaders sets the request's RemoteAddr from the X-Real-IP or
+	// X-Forwarded-For header. It defaults to false. Enable it only when every
+	// request passes through a trusted proxy that removes or overwrites both
+	// headers. Proxy source addresses are not checked.
+	TrustProxyHeaders bool
 }
 
 // ctxKey is an unexported custom type for request context keys.
@@ -74,6 +114,11 @@ const (
 	ctxKeyCertCache
 	ctxKeyLogger
 	ctxKeyReenroll
+	ctxKeyCSRCheck
+	ctxKeyRefusals
+	ctxKeyOmitTransferEncoding
+	ctxKeySRPUsername
+	ctxKeyPasswordRenewal
 )
 
 // Server constants.
@@ -85,7 +130,12 @@ const (
 // Log field and message constants.
 const (
 	logFieldError                 = "Error"
+	logMsgAuthFailed              = "authentication refused"
 	logMsgCACertsFailed           = "failed to retrieve CA certificates"
+	logMsgHostNotAllowed          = "host not allowed"
+	logMsgRateLimited             = "rate limit exceeded"
+	logMsgRefusalRecordFailed     = "failed to record refusal"
+	logMsgRenewalRefused          = "renewal refused"
 	logMsgContentTypeInvalid      = "invalid content-type"
 	logMsgCSRAttrsFailed          = "failed to retrieve CSR attributes"
 	logMsgEnrollFailed            = "failed to enroll"
@@ -102,6 +152,25 @@ const (
 func LoggerFromContext(ctx context.Context) Logger {
 	logger, _ := ctx.Value(ctxKeyLogger).(Logger)
 	return logger
+}
+
+// WithSRPUsername returns a copy of ctx that carries the username a client
+// proved in a TLS-SRP handshake (RFC 5054). A server that terminates TLS-SRP
+// sets it on each request before the router handles it. The router then
+// accepts /simplereenroll without a client certificate, as libest does. An
+// empty username returns ctx unchanged.
+func WithSRPUsername(ctx context.Context, username string) context.Context {
+	if username == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxKeySRPUsername, username)
+}
+
+// SRPUsernameFromContext returns the username set by WithSRPUsername, or an
+// empty string if the request did not sign in with TLS-SRP.
+func SRPUsernameFromContext(ctx context.Context) string {
+	username, _ := ctx.Value(ctxKeySRPUsername).(string)
+	return username
 }
 
 // caFromContext returns the backing CA from a request context, or nil if
@@ -124,8 +193,45 @@ func isReenroll(ctx context.Context) bool {
 	return ok
 }
 
+// csrCheckFromContext returns the configured CSR signature check. Without
+// one it returns the crypto/x509 check.
+func csrCheckFromContext(ctx context.Context) func(*x509.CertificateRequest) error {
+	if check, ok := ctx.Value(ctxKeyCSRCheck).(func(*x509.CertificateRequest) error); ok && check != nil {
+		return check
+	}
+	return (*x509.CertificateRequest).CheckSignature
+}
+
+// refusalsFromContext returns the configured refusal recorder. It returns nil
+// when none is configured.
+func refusalsFromContext(ctx context.Context) RefusalRecorder {
+	rec, _ := ctx.Value(ctxKeyRefusals).(RefusalRecorder)
+	return rec
+}
+
+// sendTransferEncoding reports whether responses carry the
+// Content-Transfer-Encoding header.
+func sendTransferEncoding(ctx context.Context) bool {
+	omit, _ := ctx.Value(ctxKeyOmitTransferEncoding).(bool)
+	return !omit
+}
+
+// passwordRenewal reports whether a renewal request without a client
+// certificate signs in with the HTTP Basic credentials CheckBasicAuth accepted.
+// An empty username is refused, because CheckBasicAuth also runs for requests
+// without credentials.
+func passwordRenewal(r *http.Request) bool {
+	enabled, _ := r.Context().Value(ctxKeyPasswordRenewal).(bool)
+	username, _, ok := r.BasicAuth()
+	return enabled && ok && username != ""
+}
+
 // NewRouter creates a new EST server mux.
 func NewRouter(cfg *ServerConfig) (http.Handler, error) {
+	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil {
+		return nil, errors.New("PasswordRenewal requires CheckBasicAuth")
+	}
+
 	r := chi.NewRouter()
 
 	timeout := defaultTimeout
@@ -142,9 +248,15 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 
 	r.Use(middleware.Timeout(timeout))
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	if cfg.TrustProxyHeaders {
+		r.Use(middleware.RealIP)
+	}
 	r.Use(withLogger(logger))
 	r.Use(recoverer(logger))
+	r.Use(middleware.WithValue(ctxKeyRefusals, cfg.Refusals))
+	r.Use(middleware.WithValue(ctxKeyCSRCheck, cfg.CheckCSRSignature))
+	r.Use(middleware.WithValue(ctxKeyOmitTransferEncoding, cfg.OmitTransferEncoding))
+	r.Use(middleware.WithValue(ctxKeyPasswordRenewal, cfg.PasswordRenewal))
 	r.Use(addServerHeader)
 	r.Use(addSecureHeaders)
 	if len(cfg.AllowedHosts) > 0 {
@@ -248,7 +360,7 @@ func cacerts(w http.ResponseWriter, r *http.Request) {
 	// Update CA certificates cache with each explicit call to /cacerts.
 	certCacheFromContext(ctx).Add(aps, certs)
 
-	writeResponse(w, mimeTypePKCS7, true, certs)
+	writeResponse(ctx, w, mimeTypePKCS7, true, certs)
 }
 
 // csrattrs services the /csrattrs endpoint.
@@ -261,7 +373,7 @@ func csrattrs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResponse(w, mimeTypeCSRAttrs, true, attrs)
+	writeResponse(ctx, w, mimeTypeCSRAttrs, true, attrs)
 }
 
 // enroll services the /simpleenroll endpoint.
@@ -269,14 +381,22 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	aps := chi.URLParam(r, apsParamName)
 
-	csr, err := readCSRRequest(r.Body, true)
-	if writeOnError(ctx, w, logMsgReadBodyFailed, err) {
+	csr, err := readCSRRequest(r.Body, csrCheckFromContext(ctx))
+	if err != nil {
+		refuse(w, r, logMsgReadBodyFailed, err)
 		return
 	}
 
 	renew := isReenroll(ctx)
 
-	if renew {
+	// A client that sent no certificate and signed in with TLS-SRP or with a
+	// password under PasswordRenewal has nothing to compare the request with.
+	// The choice of the certificate being renewed is left to the CA. libest
+	// does the same for TLS-SRP.
+	noCert := r.TLS == nil || len(r.TLS.PeerCertificates) == 0
+	loginRenewal := renew && noCert && (SRPUsernameFromContext(ctx) != "" || passwordRenewal(r))
+
+	if renew && !loginRenewal {
 
 		// Per RFC7030 4.2.2, for /simplereenroll the Subject and
 		// SubjectAltName fields in the CSR MUST be identical to the
@@ -304,11 +424,11 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		// for a /simplereenroll operation, and we therefore require a client
 		// to use an existing certificate for renew operations.
 		//
-		// This server does not support clients which do not support TLS client
-		// authentication for renew operations.
+		// Apart from TLS-SRP logins and PasswordRenewal, this server requires
+		// TLS client authentication for renew operations.
 
-		if len(r.TLS.PeerCertificates) == 0 {
-			errNoClientCertificate.Write(w)
+		if noCert {
+			refuse(w, r, logMsgRenewalRefused, errNoClientCertificate)
 			return
 		}
 
@@ -318,7 +438,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 
 		// Compare Subject fields.
 		if !bytes.Equal(csr.RawSubject, cert.RawSubject) {
-			errSubjectChanged.Write(w)
+			refuse(w, r, logMsgRenewalRefused, errSubjectChanged)
 			return
 		}
 
@@ -341,13 +461,18 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !bytes.Equal(csrSAN.Value, certSAN.Value) {
-			errSubjectChanged.Write(w)
+			refuse(w, r, logMsgRenewalRefused, errSubjectChanged)
 			return
 		}
 
-		// Verify certificate against CA certificates.
-		err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r)
-		if writeOnError(ctx, w, logMsgVerifyFailed, err) {
+		// Verify certificate against CA certificates. A CA failure while
+		// fetching them is not a refusal of the client.
+		if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+			if errors.Is(err, errInvalidClientCert) {
+				refuse(w, r, logMsgVerifyFailed, err)
+			} else {
+				writeOnError(ctx, w, logMsgVerifyFailed, err)
+			}
 			return
 		}
 	}
@@ -355,7 +480,11 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	// Request certificate from backing CA.
 	var cert *x509.Certificate
 	if renew {
-		cert, err = caFromContext(ctx).Reenroll(ctx, r.TLS.PeerCertificates[0], csr, aps, r)
+		var renewed *x509.Certificate
+		if !loginRenewal {
+			renewed = r.TLS.PeerCertificates[0]
+		}
+		cert, err = caFromContext(ctx).Reenroll(ctx, renewed, csr, aps, r)
 	} else {
 		cert, err = caFromContext(ctx).Enroll(ctx, csr, aps, r)
 	}
@@ -363,7 +492,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResponse(w, mimeTypePKCS7CertsOnly, true, cert)
+	writeResponse(ctx, w, mimeTypePKCS7CertsOnly, true, cert)
 }
 
 // serverkeygen services the /serverkeygen endpoint.
@@ -371,8 +500,11 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	aps := chi.URLParam(r, apsParamName)
 
-	csr, err := readCSRRequest(r.Body, true)
-	if writeOnError(ctx, w, logMsgReadBodyFailed, err) {
+	// RFC 7030 section 4.4.1: the server MUST ignore the public key values and
+	// the signature in the CSR, so the signature is not checked.
+	csr, err := readCSRRequest(r.Body, nil)
+	if err != nil {
+		refuse(w, r, logMsgReadBodyFailed, err)
 		return
 	}
 
@@ -382,14 +514,16 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Encode and write response.
+	// Encode and write response. The key is classified by its structure so
+	// that keys crypto/x509 cannot parse, such as ML-KEM or composite ML-DSA
+	// keys, are still sent as PKCS#8.
 	var keyContentType string
-	if _, p8err := x509.ParsePKCS8PrivateKey(key); p8err == nil {
+	if isPKCS8(key) {
 		keyContentType = mimeTypePKCS8
 	} else if _, p7err := pkcs7.Parse(key); p7err == nil {
 		keyContentType = mimeTypePKCS7GenKey
 	} else {
-		LoggerFromContext(ctx).Errorf("failed to parse private key: %v, %v", p8err, p7err)
+		LoggerFromContext(ctx).Errorf("failed to classify private key: not PKCS#8, %v", p7err)
 		errInternal.Write(w)
 		return
 	}
@@ -400,12 +534,13 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 			{contentType: keyContentType, data: key},
 			{contentType: mimeTypePKCS7CertsOnly, data: cert},
 		},
+		sendTransferEncoding(ctx),
 	)
 	if writeOnError(ctx, w, logMsgMultipartEncodeFailed, err) {
 		return
 	}
 
-	writeResponse(w, contentType, false, buf.Bytes())
+	writeResponse(ctx, w, contentType, false, buf.Bytes())
 }
 
 // tpmenroll services the /tpmenroll endpoint.
@@ -428,7 +563,8 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 			{contentType: mimeTypeOctetStream, data: &akPub},
 		},
 	)
-	if writeOnError(ctx, w, logMsgMultipartDecodeFailed, err) {
+	if err != nil {
+		refuse(w, r, logMsgMultipartDecodeFailed, err)
 		return
 	}
 
@@ -439,7 +575,7 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 	// so none of the protection depends on the EK public area and in general
 	// it can be manipulated and is unreliable.
 	if err := validatePublicAreaPublicKey(ekPub, ekCerts[0].PublicKey); err != nil {
-		writeOnError(ctx, w, logMsgPublicKeyInvalid, err)
+		refuse(w, r, logMsgPublicKeyInvalid, err)
 		return
 	}
 
@@ -468,12 +604,13 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 			{contentType: mimeTypeOctetStream, data: encSeed},
 			{contentType: mimeTypePKCS7Enveloped, data: cred},
 		},
+		sendTransferEncoding(ctx),
 	)
 	if writeOnError(ctx, w, logMsgMultipartEncodeFailed, err) {
 		return
 	}
 
-	writeResponse(w, contentType, false, buf.Bytes())
+	writeResponse(ctx, w, contentType, false, buf.Bytes())
 }
 
 // writeOnError writes returns true and writes an error to the provided HTTP
@@ -491,7 +628,7 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		}
 
 		w.Header().Set(contentTypeHeader, mimeTypeTextPlainUTF8)
-		if secs := estErr.RetryAfter(); secs != 0 {
+		if secs := estErr.RetryAfter(); secs > 0 {
 			w.Header().Set(retryAfterHeader, strconv.Itoa(secs))
 		}
 
@@ -526,14 +663,9 @@ func withLogger(logger Logger) func(next http.Handler) http.Handler {
 			t1 := time.Now()
 
 			defer func() {
-				scheme := "http"
-				if r.TLS != nil {
-					scheme = "https"
-				}
-
 				logger.Infow("HTTP request",
 					"Method", r.Method,
-					"URI", fmt.Sprintf("%s://%s%s", scheme, r.Host, r.RequestURI),
+					"URI", fmt.Sprintf("%s://%s%s", requestScheme(r), r.Host, r.RequestURI),
 					"Protocol", r.Proto,
 					"Remote Address", r.RemoteAddr,
 					"Status", ww.Status(),
@@ -547,6 +679,15 @@ func withLogger(logger Logger) func(next http.Handler) http.Handler {
 		}
 		return http.HandlerFunc(fn)
 	}
+}
+
+// requestScheme returns the URI scheme of a request for log entries. A TLS-SRP
+// connection is not a crypto/tls connection, so it leaves r.TLS nil.
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil || SRPUsernameFromContext(r.Context()) != "" {
+		return "https"
+	}
+	return "http"
 }
 
 // recoverer is middleware which recovers from a panic and logs a stack trace.
@@ -567,20 +708,17 @@ func recoverer(logger Logger) func(next http.Handler) http.Handler {
 						logger = logger.With("HTTP Request ID", reqID)
 					}
 
-					scheme := "http"
-					if r.TLS != nil {
-						scheme = "https"
-					}
-
 					logger.Errorw(
 						logMsgPanicRecovery,
 						"Method", r.Method,
-						"URI", fmt.Sprintf("%s://%s%s", scheme, r.Host, r.RequestURI),
+						"URI", fmt.Sprintf("%s://%s%s", requestScheme(r), r.Host, r.RequestURI),
 						"Protocol", r.Proto,
 						"Remote Address", r.RemoteAddr,
 						"Panic Value", rcv,
 						"Stack Trace", string(debug.Stack()),
 					)
+
+					errInternal.Write(w)
 				}
 			}()
 
@@ -595,7 +733,7 @@ func requireContentType(t string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if err := verifyRequestType(r.Header.Get(contentTypeHeader), t); err != nil {
-				writeOnError(r.Context(), w, logMsgContentTypeInvalid, err)
+				refuse(w, r, logMsgContentTypeInvalid, err)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -610,7 +748,7 @@ func requireContentType(t string) func(next http.Handler) http.Handler {
 // returning the name and version of the server software.
 func addServerHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(serverHeader, "GlobalSign EST Server "+estVersion)
+		w.Header().Set(serverHeader, "go-pki-est EST server "+estVersion)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -637,17 +775,19 @@ func verifyAllowedHosts(allowed []string) func(next http.Handler) http.Handler {
 			if host, _, err := net.SplitHostPort(reqHost); err == nil {
 				reqHost = host
 			}
+			reqHost = strings.Trim(reqHost, "[]")
 
 			goodHost := false
 			for _, host := range allowed {
-				if strings.EqualFold(host, reqHost) {
+				// IPv6 addresses may be listed with or without brackets.
+				if strings.EqualFold(strings.Trim(host, "[]"), reqHost) {
 					goodHost = true
 					break
 				}
 			}
 
 			if !goodHost {
-				errHostNotAllowed.Write(w)
+				refuse(w, r, logMsgHostNotAllowed, errHostNotAllowed)
 				return
 			}
 
@@ -664,7 +804,7 @@ func rateLimit(limit int) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !limiter.Allow() {
-				errRateLimitExceeded.Write(w)
+				refuse(w, r, logMsgRateLimited, errRateLimitExceeded)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -685,7 +825,9 @@ func maxBodySize(sz int64) func(next http.Handler) http.Handler {
 
 // requireBasicAuth is middleware which optionally requires HTTP Basic
 // Authentication. If checkFunc is nil, authentication will succeed if and
-// only if optional is true.
+// only if optional is true. An Error from checkFunc with a status other than
+// 401 is sent as is, so the host can refuse with 403 or ask for a retry with
+// 429.
 func requireBasicAuth(
 	checkFunc func(context.Context, *http.Request, string, string, string) error,
 	optional bool,
@@ -697,8 +839,15 @@ func requireBasicAuth(
 			if checkFunc != nil {
 				aps := chi.URLParam(r, apsParamName)
 				username, password, _ := r.BasicAuth()
-				if err := checkFunc(r.Context(), r, aps, username, password); err == nil {
+				err := checkFunc(r.Context(), r, aps, username, password)
+				if err == nil {
 					authenticated = true
+				} else {
+					var estErr Error
+					if errors.As(err, &estErr) && estErr.StatusCode() != http.StatusUnauthorized {
+						writeOnError(r.Context(), w, logMsgAuthFailed, err)
+						return
+					}
 				}
 			} else if optional {
 				authenticated = true
@@ -710,9 +859,14 @@ func requireBasicAuth(
 					reqHost = host
 				}
 
-				w.Header().Set(wwwAuthenticateHeader, fmt.Sprintf(`Basic realm="estserver@%s"`,
-					url.QueryEscape(reqHost)))
-				errAuthRequired.Write(w)
+				// The entry is set directly so HTTP/1.1 sends the RFC 9110 spelling. libest compares
+				// header names case-sensitively and ignores Go's canonical Www-Authenticate. As a
+				// result, Header().Get does not find the entry.
+				w.Header()[wwwAuthenticateHeader] = []string{fmt.Sprintf(`Basic realm="estserver@%s"`,
+					url.QueryEscape(reqHost))}
+				// The challenge carries no content. Bouncy Castle closes it without reading and fails
+				// when content is left unread.
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 

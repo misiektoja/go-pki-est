@@ -23,7 +23,7 @@ import (
 // Global constants.
 const (
 	appName       = "estserver"
-	versionString = "1.0.6"
+	versionString = "1.1.0"
 )
 
 // Flag name constants.
@@ -63,5 +63,5 @@ func usage() {
 
 // version outputs version information.
 func version() {
-	fmt.Printf("GlobalSign EST Server %s\n", versionString)
+	fmt.Printf("go-pki-est EST server %s\n", versionString)
 }

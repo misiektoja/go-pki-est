@@ -9,3 +9,8 @@
 # Executable files
 cmd/estserver/estserver
 cmd/estclient/estclient
+
+# Release artifacts, pinned tools and the release check export
+dist/
+bin/
+.cache/

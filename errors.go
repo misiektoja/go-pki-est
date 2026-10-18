@@ -18,6 +18,7 @@ package est
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 )
 
 // estError is an internal error structure implementing est.Error.
@@ -29,13 +30,13 @@ type estError struct {
 
 // Internal error values.
 var (
-	errAuthRequired = &estError{
-		status: http.StatusUnauthorized,
-		desc:   "authorization required",
-	}
 	errBodyParse = &estError{
 		status: http.StatusBadRequest,
 		desc:   "unable to parse request body",
+	}
+	errBodyTooLarge = &estError{
+		status: http.StatusRequestEntityTooLarge,
+		desc:   "request body too large",
 	}
 	errExtractPublicAreaKey = &estError{
 		status: http.StatusBadRequest,
@@ -69,6 +70,10 @@ var (
 		status: http.StatusBadRequest,
 		desc:   "invalid PKCS10 certificate signing request signature",
 	}
+	errUnsupportedPKCS10Signature = &estError{
+		status: http.StatusBadRequest,
+		desc:   "unsupported PKCS10 certificate signing request signature algorithm",
+	}
 	errInvalidTPMPublicArea = &estError{
 		status: http.StatusBadRequest,
 		desc:   "malformed TPM object public area",
@@ -86,8 +91,9 @@ var (
 		desc:   "client certificate must be provided for /simplereenroll",
 	}
 	errRateLimitExceeded = &estError{
-		status: http.StatusTooManyRequests,
-		desc:   "rate limit exceeded",
+		status:     http.StatusTooManyRequests,
+		desc:       "rate limit exceeded",
+		retryAfter: 1,
 	}
 	errSubjectChanged = &estError{
 		status: http.StatusForbidden,
@@ -126,6 +132,9 @@ func (e estError) RetryAfter() int {
 // Write writes the error to the supplied writer.
 func (e estError) Write(w http.ResponseWriter) {
 	w.Header().Set(contentTypeHeader, mimeTypeTextPlainUTF8)
+	if e.retryAfter > 0 {
+		w.Header().Set(retryAfterHeader, strconv.Itoa(e.retryAfter))
+	}
 	w.WriteHeader(e.status)
 	w.Write([]byte(fmt.Sprintf("%d %s\n", e.status, e.desc)))
 }

@@ -25,12 +25,12 @@ import (
 // connected to any backing CA by providing an implementation of this interface.
 //
 // All operations receive:
-// - a context, from which the EST server logger can be retrieved by calling
-//   LoggerFromContext
-// - the optional URI additional path segment (RFC7030 3.2.2)
-// - the HTTP request object from the server, from which the HTTP headers
-//   passed by the client (including the Host header, to support virtual
-//   servers) can be obtained
+//   - a context, from which the EST server logger can be retrieved by calling
+//     LoggerFromContext
+//   - the optional URI additional path segment (RFC7030 3.2.2)
+//   - the HTTP request object from the server, from which the HTTP headers
+//     passed by the client (including the Host header, to support virtual
+//     servers) can be obtained
 //
 // Any error object returned from these functions which implements Error will be
 // used by the EST server to determine the HTTP response code, human-readable
@@ -48,7 +48,11 @@ type CA interface {
 	Enroll(ctx context.Context, csr *x509.CertificateRequest, aps string, r *http.Request) (*x509.Certificate, error)
 
 	// Reenroll requests renewal/rekey of an existing certificate. See RFC7030
-	// 4.2.
+	// 4.2. cert is the TLS client certificate being renewed. It is nil when
+	// the client sent no certificate and signed in with TLS-SRP or, with
+	// ServerConfig.PasswordRenewal, with HTTP Basic credentials. Then the CA
+	// decides which certificate is renewed. SRPUsernameFromContext returns
+	// the TLS-SRP username and r.BasicAuth the HTTP Basic one.
 	Reenroll(ctx context.Context, cert *x509.Certificate, csr *x509.CertificateRequest, aps string, r *http.Request) (*x509.Certificate, error)
 
 	// ServerKeyGen requests a new certificate and a private key. The key must

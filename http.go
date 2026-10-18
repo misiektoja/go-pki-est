@@ -17,6 +17,7 @@ package est
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -70,6 +71,7 @@ func ordinal(n int) string {
 	return retval
 }
 
+// decodeMultipartRequest decodes base64 multipart data into the supplied parts.
 func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error) {
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get(contentTypeHeader))
 	if err != nil {
@@ -89,21 +91,29 @@ func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error)
 	mpr := multipart.NewReader(r.Body, params[mimeParamBoundary])
 
 	for i, part := range parts {
-		p, err := mpr.NextPart()
+		p, err := mpr.NextRawPart()
 		if err == io.EOF {
-			break
+			return 0, &estError{
+				status: http.StatusBadRequest,
+				desc:   fmt.Sprintf("expected %d parts in request body, got %d", len(parts), i),
+			}
 		} else if err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				return 0, errBodyTooLarge
+			}
+
 			return 0, errBodyParse
 		}
 		defer p.Close()
 
-		if err := verifyPartType(p, part.contentType, encodingTypeBase64, ordinal(i)); err != nil {
+		if err := verifyPartType(p, part.contentType, ordinal(i+1)); err != nil {
 			return 0, err
 		}
 
 		switch t := part.data.(type) {
 		case **x509.CertificateRequest:
-			csr, err := readCSRRequest(p, true)
+			csr, err := readCSRRequest(p, csrCheckFromContext(r.Context()))
 			if err != nil {
 				return 0, err
 			}
@@ -136,7 +146,10 @@ func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error)
 	return numParts, nil
 }
 
-func encodeMultiPart(boundary string, parts []multipartPart) (*bytes.Buffer, string, error) {
+// encodeMultiPart base64 encodes each part into a multipart body. If
+// transferEncoding is true, each part carries a Content-Transfer-Encoding
+// header.
+func encodeMultiPart(boundary string, parts []multipartPart, transferEncoding bool) (*bytes.Buffer, string, error) {
 	buf := bytes.NewBuffer([]byte{})
 	w := multipart.NewWriter(buf)
 	if err := w.SetBoundary(boundary); err != nil {
@@ -172,7 +185,9 @@ func encodeMultiPart(boundary string, parts []multipartPart) (*bytes.Buffer, str
 
 		v := textproto.MIMEHeader{}
 		v.Add(contentTypeHeader, part.contentType)
-		v.Add(transferEncodingHeader, encodingTypeBase64)
+		if transferEncoding {
+			v.Add(transferEncodingHeader, encodingTypeBase64)
+		}
 		data = base64Encode(data)
 
 		pw, err := w.CreatePart(v)
@@ -211,21 +226,14 @@ func parseHTTPTime(s string) (time.Time, error) {
 	return time.Time{}, errors.New("failed to parse time")
 }
 
-// verifyPartType checks if the content-type and content-transfer-encoding of
-// a multipart-part is as expected.
-func verifyPartType(part *multipart.Part, ct, ce, pos string) error {
+// verifyPartType checks if the content-type of a multipart-part is as
+// expected.
+func verifyPartType(part *multipart.Part, ct, pos string) error {
 	ctype, _, err := mime.ParseMediaType(part.Header.Get(contentTypeHeader))
 	if err != nil || !strings.HasPrefix(ctype, ct) {
 		return &estError{
 			status: http.StatusUnsupportedMediaType,
 			desc:   fmt.Sprintf("%s of %s part must be %s", contentTypeHeader, pos, ct),
-		}
-	}
-
-	if part.Header.Get(transferEncodingHeader) != ce {
-		return &estError{
-			status: http.StatusUnsupportedMediaType,
-			desc:   fmt.Sprintf("%s of %s part must be %s", transferEncodingHeader, pos, ce),
 		}
 	}
 
@@ -288,7 +296,7 @@ func verifyRequestType(have, want string) error {
 // writeResponse writes headers, a status code, and an object containing the
 // body to an HTTP response. If encode is true, the object is base64-encoded.
 // The appropriate encoding is chosen according to the object's type.
-func writeResponse(w http.ResponseWriter, contentType string, encode bool, obj interface{}) {
+func writeResponse(ctx context.Context, w http.ResponseWriter, contentType string, encode bool, obj interface{}) {
 	if contentType != "" {
 		w.Header().Set(contentTypeHeader, contentType)
 	}
@@ -316,7 +324,9 @@ func writeResponse(w http.ResponseWriter, contentType string, encode bool, obj i
 	}
 
 	if encode {
-		w.Header().Set(transferEncodingHeader, encodingTypeBase64)
+		if sendTransferEncoding(ctx) {
+			w.Header().Set(transferEncodingHeader, encodingTypeBase64)
+		}
 		body = base64Encode(body)
 	}
 

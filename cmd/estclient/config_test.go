@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -34,14 +35,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/mockca"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
 
 	"github.com/globalsign/pemfile"
 )
@@ -238,6 +240,48 @@ func TestNewConfigHardware(t *testing.T) {
 	}
 }
 
+func TestReadAKPublicRelativePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	want := []byte("public area")
+	if err := os.WriteFile(filepath.Join(dir, "ak.pub"), want, 0600); err != nil {
+		t.Fatalf("failed to write public area: %v", err)
+	}
+
+	cfg := config{
+		baseDir:    dir,
+		PrivateKey: &privateKey{TPM: &tpmKey{Public: "ak.pub"}},
+	}
+
+	got, err := readAKPublic(&cfg)
+	if err != nil {
+		t.Fatalf("failed to read public area: %v", err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestTPMEnrollNoPrivateKey(t *testing.T) {
+	t.Parallel()
+
+	err := tpmenroll(io.Discard, makeCmdFlagSet(t, tpmenrollCmd, nil))
+	if !errors.Is(err, errNoPrivateKey) {
+		t.Fatalf("got error %v, want %v", err, errNoPrivateKey)
+	}
+}
+
+func TestHSMKeyNoKeyID(t *testing.T) {
+	t.Parallel()
+
+	k := hsmKey{LibraryPath: "/nonexistent/libpkcs11.so", PIN: "1234"}
+	if _, _, err := k.Get(""); !errors.Is(err, errNoHSMKeyID) {
+		t.Fatalf("got error %v, want %v", err, errNoHSMKeyID)
+	}
+}
+
 func TestCACerts(t *testing.T) {
 	t.Parallel()
 
@@ -284,6 +328,16 @@ func TestCACerts(t *testing.T) {
 				"-" + serverFlag, uri,
 				"-" + apsFlag, "otherthing",
 				"-" + implicitAnchorFlag, cafile,
+			},
+		},
+		{
+			name: "FilterFlagsFalse",
+			args: []string{
+				"-" + serverFlag, uri,
+				"-" + explicitAnchorFlag, cafile,
+				"-" + rootsOnlyFlag + "=false",
+				"-" + intermediatesOnlyFlag + "=false",
+				"-" + rootOutFlag + "=false",
 			},
 		},
 		{
@@ -452,7 +506,7 @@ func TestEnroll(t *testing.T) {
 				"-" + usernameFlag, "testuser",
 				"-" + passwordFlag, "opensesame",
 			},
-			err: errors.New("authorization required"),
+			err: errors.New("Unauthorized"),
 		},
 	}
 
@@ -487,6 +541,8 @@ func TestReenroll(t *testing.T) {
 		"-" + explicitAnchorFlag, cafile,
 	}
 
+	mldsaKey := writeMLDSAKeyFile(t)
+
 	var testcases = []struct {
 		name         string
 		enrollArgs   []string
@@ -507,6 +563,25 @@ func TestReenroll(t *testing.T) {
 				"-" + serverFlag, uri,
 				"-" + explicitAnchorFlag, cafile,
 				"-" + keyFlag, "testdata/test_key.pem",
+				"-" + usernameFlag, "testuser",
+				"-" + passwordFlag, "xyzzy",
+			},
+		},
+		{
+			// The renewal presents the ML-DSA certificate over TLS 1.3.
+			name: "OK/ML-DSA-65",
+			enrollArgs: []string{
+				"-" + serverFlag, uri,
+				"-" + explicitAnchorFlag, cafile,
+				"-" + commonNameFlag, "Jorkmldsa Doe",
+				"-" + keyFlag, mldsaKey,
+				"-" + usernameFlag, "testuser",
+				"-" + passwordFlag, "xyzzy",
+			},
+			reenrollArgs: []string{
+				"-" + serverFlag, uri,
+				"-" + explicitAnchorFlag, cafile,
+				"-" + keyFlag, mldsaKey,
 				"-" + usernameFlag, "testuser",
 				"-" + passwordFlag, "xyzzy",
 			},
@@ -622,6 +697,43 @@ func TestServerKeyGen(t *testing.T) {
 
 			verifyIsPEMBlocks(t, buf.Bytes(), 2)
 		})
+	}
+}
+
+// failFirstWriter fails the first write and accepts all later writes.
+type failFirstWriter struct {
+	failed bool
+}
+
+func (w *failFirstWriter) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
+		return 0, errors.New("write failed")
+	}
+
+	return len(p), nil
+}
+
+func TestServerKeyGenWriteError(t *testing.T) {
+	t.Parallel()
+
+	s, rootCert, uri := newTestServer(t)
+	defer s.Close()
+
+	cafile, remove := makeRootCertFile(t, rootCert)
+	defer remove(t)
+
+	args := []string{
+		"-" + serverFlag, uri,
+		"-" + explicitAnchorFlag, cafile,
+		"-" + commonNameFlag, "Jackie Doe",
+		"-" + usernameFlag, "testuser",
+		"-" + passwordFlag, "xyzzy",
+	}
+
+	// The private key is written first, so its write fails.
+	if err := serverkeygen(&failFirstWriter{}, makeCmdFlagSet(t, serverkeygenCmd, args)); err == nil {
+		t.Fatal("serverkeygen succeeded although writing the private key failed")
 	}
 }
 
@@ -753,6 +865,14 @@ func TestSampleConfig(t *testing.T) {
 				"-" + tpmFlag,
 			},
 			length: 773,
+		},
+		{
+			name: "HSMAndTPMFalse",
+			args: []string{
+				"-" + hsmFlag + "=false",
+				"-" + tpmFlag + "=false",
+			},
+			length: 319,
 		},
 	}
 
@@ -923,6 +1043,28 @@ func makeCmdFlagSet(t *testing.T, cmd string, args []string) *flag.FlagSet {
 	}
 
 	return set
+}
+
+// writeMLDSAKeyFile writes a new ML-DSA-65 private key as a PKCS#8 PEM file in the test's
+// temporary directory and returns its path.
+func writeMLDSAKeyFile(t *testing.T) string {
+	t.Helper()
+
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "mldsa_key.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("failed to write private key: %v", err)
+	}
+
+	return path
 }
 
 func makeRootCertFile(t *testing.T, cert *x509.Certificate) (string, func(t *testing.T)) {

@@ -32,10 +32,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/mockca"
-	"github.com/globalsign/est/internal/tpm"
 	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
+	"github.com/misiektoja/go-pki-est/internal/tpm"
 	"go.mozilla.org/pkcs7"
 )
 
