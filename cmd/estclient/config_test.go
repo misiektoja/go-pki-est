@@ -505,7 +505,7 @@ func TestEnroll(t *testing.T) {
 				"-" + usernameFlag, "testuser",
 				"-" + passwordFlag, "opensesame",
 			},
-			err: errors.New("authorization required"),
+			err: errors.New("Unauthorized"),
 		},
 	}
 

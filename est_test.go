@@ -1146,8 +1146,7 @@ func TestServerErrors(t *testing.T) {
 				authorizationHeader: []string{"baad"},
 				hostHeader:          []string{testDomain + ":666"},
 			},
-			status:  http.StatusUnauthorized,
-			errText: "401 authorization required\n",
+			status: http.StatusUnauthorized,
 		},
 		{
 			name:   "HealthCheck/BadHost",

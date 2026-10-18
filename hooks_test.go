@@ -177,6 +177,28 @@ func TestCheckBasicAuthResult(t *testing.T) {
 func TestBasicChallengeSpelling(t *testing.T) {
 	t.Parallel()
 
+	head, _ := basicChallenge(t)
+	if !strings.Contains(head, "\r\nWWW-Authenticate: Basic realm=") {
+		t.Errorf("challenge header not spelled WWW-Authenticate: %q", head)
+	}
+}
+
+// TestBasicChallengeHasNoBody checks that the Basic challenge carries no content. Bouncy Castle
+// closes the challenge without reading it and fails when content is left unread.
+func TestBasicChallengeHasNoBody(t *testing.T) {
+	t.Parallel()
+
+	head, body := basicChallenge(t)
+	if !strings.Contains(head, "\r\nContent-Length: 0\r\n") || body != "" {
+		t.Errorf("challenge has content: %q %q", head, body)
+	}
+}
+
+// basicChallenge sends an enrollment request with refused credentials over a raw connection and
+// returns the head and body of the 401 answer as they appear on the wire.
+func basicChallenge(t *testing.T) (string, string) {
+	t.Helper()
+
 	h := newHookRouter(t, est.ServerConfig{
 		CheckBasicAuth: func(ctx context.Context, r *http.Request, aps, username, password string) error {
 			return errors.New("bad credentials")
@@ -191,9 +213,9 @@ func TestBasicChallengeSpelling(t *testing.T) {
 	}
 	defer conn.Close()
 
-	body := mustMakeBase64CSR(t, "Device")
+	csr := mustMakeBase64CSR(t, "Device")
 	request := "POST " + enrollEndpoint + " HTTP/1.1\r\nHost: est.example.test\r\nContent-Type: " + mimeTypePKCS10 +
-		"\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\nConnection: close\r\n\r\n" + string(body)
+		"\r\nContent-Length: " + strconv.Itoa(len(csr)) + "\r\nConnection: close\r\n\r\n" + string(csr)
 	if _, err := io.WriteString(conn, request); err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
@@ -202,13 +224,11 @@ func TestBasicChallengeSpelling(t *testing.T) {
 		t.Fatalf("failed to read response: %v", err)
 	}
 
-	head, _, _ := strings.Cut(string(raw), "\r\n\r\n")
+	head, body, _ := strings.Cut(string(raw), "\r\n\r\n")
 	if !strings.HasPrefix(head, "HTTP/1.1 401") {
 		t.Fatalf("got response %q, want 401", head)
 	}
-	if !strings.Contains(head, "\r\nWWW-Authenticate: Basic realm=") {
-		t.Errorf("challenge header not spelled WWW-Authenticate: %q", head)
-	}
+	return head + "\r\n", body
 }
 
 // TestCheckCSRSignature checks that the CSR signature hook replaces the default check on enroll.
