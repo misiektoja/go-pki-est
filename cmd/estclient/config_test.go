@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -540,6 +541,8 @@ func TestReenroll(t *testing.T) {
 		"-" + explicitAnchorFlag, cafile,
 	}
 
+	mldsaKey := writeMLDSAKeyFile(t)
+
 	var testcases = []struct {
 		name         string
 		enrollArgs   []string
@@ -560,6 +563,25 @@ func TestReenroll(t *testing.T) {
 				"-" + serverFlag, uri,
 				"-" + explicitAnchorFlag, cafile,
 				"-" + keyFlag, "testdata/test_key.pem",
+				"-" + usernameFlag, "testuser",
+				"-" + passwordFlag, "xyzzy",
+			},
+		},
+		{
+			// The renewal presents the ML-DSA certificate over TLS 1.3.
+			name: "OK/ML-DSA-65",
+			enrollArgs: []string{
+				"-" + serverFlag, uri,
+				"-" + explicitAnchorFlag, cafile,
+				"-" + commonNameFlag, "Jorkmldsa Doe",
+				"-" + keyFlag, mldsaKey,
+				"-" + usernameFlag, "testuser",
+				"-" + passwordFlag, "xyzzy",
+			},
+			reenrollArgs: []string{
+				"-" + serverFlag, uri,
+				"-" + explicitAnchorFlag, cafile,
+				"-" + keyFlag, mldsaKey,
 				"-" + usernameFlag, "testuser",
 				"-" + passwordFlag, "xyzzy",
 			},
@@ -1021,6 +1043,28 @@ func makeCmdFlagSet(t *testing.T, cmd string, args []string) *flag.FlagSet {
 	}
 
 	return set
+}
+
+// writeMLDSAKeyFile writes a new ML-DSA-65 private key as a PKCS#8 PEM file in the test's
+// temporary directory and returns its path.
+func writeMLDSAKeyFile(t *testing.T) string {
+	t.Helper()
+
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "mldsa_key.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("failed to write private key: %v", err)
+	}
+
+	return path
 }
 
 func makeRootCertFile(t *testing.T, cert *x509.Certificate) (string, func(t *testing.T)) {

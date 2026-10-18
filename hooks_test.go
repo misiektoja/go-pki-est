@@ -98,6 +98,22 @@ func newHookRouter(t *testing.T, cfg est.ServerConfig) http.Handler {
 	return r
 }
 
+// newHookClient serves h over TLS until the test ends and returns a client that trusts the server.
+func newHookClient(t *testing.T, h http.Handler) *est.Client {
+	t.Helper()
+
+	s := httptest.NewTLSServer(h)
+	t.Cleanup(s.Close)
+
+	anchor := x509.NewCertPool()
+	anchor.AddCert(s.Certificate())
+
+	return &est.Client{
+		Host:           strings.TrimPrefix(s.URL, "https://"),
+		ExplicitAnchor: anchor,
+	}
+}
+
 // serve sends one request to h and returns the recorded response.
 func serve(h http.Handler, method, target, contentType string, body []byte) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))
@@ -539,6 +555,41 @@ type keyGenCA struct {
 func (ca keyGenCA) ServerKeyGen(ctx context.Context, csr *x509.CertificateRequest, aps string, r *http.Request) (*x509.Certificate, []byte, error) {
 	cert, err := ca.Enroll(ctx, csr, aps, r)
 	return cert, ca.key, err
+}
+
+// TestServerKeyGenMLDSA checks that a client receives an ML-DSA key from /serverkeygen as PKCS#8
+// that crypto/x509 parses, with a certificate for its public key.
+func TestServerKeyGenMLDSA(t *testing.T) {
+	t.Parallel()
+
+	key := mustGenerateMLDSAPrivateKey(t)
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+	inner, err := mockca.NewTransient()
+	if err != nil {
+		t.Fatalf("failed to create mock CA: %v", err)
+	}
+	client := newHookClient(t, newHookRouter(t, est.ServerConfig{CA: keyGenCA{MockCA: inner, key: der}}))
+
+	// keyGenCA issues the certificate for the request's public key, so the
+	// request carries the key the CA returns.
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	cert, got, err := client.ServerKeyGen(ctx, mustCreateCertificateRequest(t, key, "Device", nil))
+	if err != nil {
+		t.Fatalf("failed to get server-generated key: %v", err)
+	}
+
+	parsed, err := x509.ParsePKCS8PrivateKey(got)
+	if err != nil {
+		t.Fatalf("failed to parse server-generated key: %v", err)
+	}
+	if !key.Equal(parsed) {
+		t.Errorf("got key %T, want the ML-DSA-65 key from the CA", parsed)
+	}
+	verifyPublicKey(t, cert.PublicKey, key)
 }
 
 // TestServerKeyGenUnrecognizedPKCS8 checks that PKCS#8 keys of algorithms crypto/x509 cannot parse are sent as PKCS#8.

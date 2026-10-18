@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -237,6 +238,12 @@ func TestEnroll(t *testing.T) {
 			name:       "OK/RSA",
 			commonName: "Jane Doe",
 			key:        mustGenerateRSAPrivateKey(t),
+			status:     http.StatusOK,
+		},
+		{
+			name:       "OK/ML-DSA-65",
+			commonName: "Jean Doe",
+			key:        mustGenerateMLDSAPrivateKey(t),
 			status:     http.StatusOK,
 		},
 		{
@@ -536,6 +543,21 @@ func TestReenroll(t *testing.T) {
 				DNSNames: []string{"john-doe.domain"},
 			},
 			key:    mustGenerateRSAPrivateKey(t),
+			status: http.StatusOK,
+		},
+		{
+			// An ML-DSA client certificate needs TLS 1.3, which the test
+			// client and server negotiate by default.
+			name: "OK/ML-DSA-65",
+			ecsr: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jo Doe"},
+				DNSNames: []string{"jo-doe.domain"},
+			},
+			rcsr: &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: "Jo Doe"},
+				DNSNames: []string{"jo-doe.domain"},
+			},
+			key:    mustGenerateMLDSAPrivateKey(t),
 			status: http.StatusOK,
 		},
 		{
@@ -1425,6 +1447,18 @@ func mustGenerateRSAPrivateKey(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
+// mustGenerateMLDSAPrivateKey returns a new ML-DSA-65 private key.
+func mustGenerateMLDSAPrivateKey(t *testing.T) *mldsa.PrivateKey {
+	t.Helper()
+
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+
+	return key
+}
+
 func verifyPublicKey(t *testing.T, pub, priv interface{}) {
 	t.Helper()
 
@@ -1435,6 +1469,9 @@ func verifyPublicKey(t *testing.T, pub, priv interface{}) {
 		wantPublic = k.Public()
 
 	case *ecdsa.PrivateKey:
+		wantPublic = k.Public()
+
+	case *mldsa.PrivateKey:
 		wantPublic = k.Public()
 
 	default:
