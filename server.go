@@ -64,9 +64,10 @@ type ServerConfig struct {
 	// means that authentication was successful. An error that implements Error
 	// with a status other than 401, such as 403 or 429, is sent as is with its
 	// Retry-After value. Any other error answers 401 with a Basic challenge.
-	// If CheckBasicAuth is nil, then HTTP Basic Authentication is not required
-	// for any EST operation, but access to the /healthcheck endpoint will be
-	// blocked.
+	// On a TLS-SRP connection, SRPUsernameFromContext(ctx) returns the
+	// username the client signed in with. If CheckBasicAuth is nil, then HTTP
+	// Basic Authentication is not required for any EST operation, but access to
+	// the /healthcheck endpoint will be blocked.
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
 
 	// CheckCSRSignature optionally verifies the signature of each PKCS#10
@@ -107,6 +108,7 @@ const (
 	ctxKeyCSRCheck
 	ctxKeyRefusals
 	ctxKeyOmitTransferEncoding
+	ctxKeySRPUsername
 )
 
 // Server constants.
@@ -140,6 +142,25 @@ const (
 func LoggerFromContext(ctx context.Context) Logger {
 	logger, _ := ctx.Value(ctxKeyLogger).(Logger)
 	return logger
+}
+
+// WithSRPUsername returns a copy of ctx that carries the username a client
+// proved in a TLS-SRP handshake (RFC 5054). A server that terminates TLS-SRP
+// sets it on each request before the router handles it. The router then
+// accepts /simplereenroll without a client certificate, as libest does. An
+// empty username returns ctx unchanged.
+func WithSRPUsername(ctx context.Context, username string) context.Context {
+	if username == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxKeySRPUsername, username)
+}
+
+// SRPUsernameFromContext returns the username set by WithSRPUsername, or an
+// empty string if the request did not sign in with TLS-SRP.
+func SRPUsernameFromContext(ctx context.Context) string {
+	username, _ := ctx.Value(ctxKeySRPUsername).(string)
+	return username
 }
 
 // caFromContext returns the backing CA from a request context, or nil if
@@ -343,7 +364,12 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 
 	renew := isReenroll(ctx)
 
-	if renew {
+	// A client that signed in with TLS-SRP has no certificate to compare the
+	// request with. libest accepts its renewal and leaves the choice of the
+	// certificate being renewed to the CA, so this server does the same.
+	srpRenewal := renew && (r.TLS == nil || len(r.TLS.PeerCertificates) == 0) && SRPUsernameFromContext(ctx) != ""
+
+	if renew && !srpRenewal {
 
 		// Per RFC7030 4.2.2, for /simplereenroll the Subject and
 		// SubjectAltName fields in the CSR MUST be identical to the
@@ -371,8 +397,8 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		// for a /simplereenroll operation, and we therefore require a client
 		// to use an existing certificate for renew operations.
 		//
-		// This server does not support clients which do not support TLS client
-		// authentication for renew operations.
+		// Apart from TLS-SRP logins, this server does not support clients which
+		// do not support TLS client authentication for renew operations.
 
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
 			refuse(w, r, logMsgRenewalRefused, errNoClientCertificate)
@@ -427,7 +453,11 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	// Request certificate from backing CA.
 	var cert *x509.Certificate
 	if renew {
-		cert, err = caFromContext(ctx).Reenroll(ctx, r.TLS.PeerCertificates[0], csr, aps, r)
+		var renewed *x509.Certificate
+		if !srpRenewal {
+			renewed = r.TLS.PeerCertificates[0]
+		}
+		cert, err = caFromContext(ctx).Reenroll(ctx, renewed, csr, aps, r)
 	} else {
 		cert, err = caFromContext(ctx).Enroll(ctx, csr, aps, r)
 	}
@@ -606,14 +636,9 @@ func withLogger(logger Logger) func(next http.Handler) http.Handler {
 			t1 := time.Now()
 
 			defer func() {
-				scheme := "http"
-				if r.TLS != nil {
-					scheme = "https"
-				}
-
 				logger.Infow("HTTP request",
 					"Method", r.Method,
-					"URI", fmt.Sprintf("%s://%s%s", scheme, r.Host, r.RequestURI),
+					"URI", fmt.Sprintf("%s://%s%s", requestScheme(r), r.Host, r.RequestURI),
 					"Protocol", r.Proto,
 					"Remote Address", r.RemoteAddr,
 					"Status", ww.Status(),
@@ -627,6 +652,15 @@ func withLogger(logger Logger) func(next http.Handler) http.Handler {
 		}
 		return http.HandlerFunc(fn)
 	}
+}
+
+// requestScheme returns the URI scheme of a request for log entries. A TLS-SRP
+// connection is not a crypto/tls connection, so it leaves r.TLS nil.
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil || SRPUsernameFromContext(r.Context()) != "" {
+		return "https"
+	}
+	return "http"
 }
 
 // recoverer is middleware which recovers from a panic and logs a stack trace.
@@ -647,15 +681,10 @@ func recoverer(logger Logger) func(next http.Handler) http.Handler {
 						logger = logger.With("HTTP Request ID", reqID)
 					}
 
-					scheme := "http"
-					if r.TLS != nil {
-						scheme = "https"
-					}
-
 					logger.Errorw(
 						logMsgPanicRecovery,
 						"Method", r.Method,
-						"URI", fmt.Sprintf("%s://%s%s", scheme, r.Host, r.RequestURI),
+						"URI", fmt.Sprintf("%s://%s%s", requestScheme(r), r.Host, r.RequestURI),
 						"Protocol", r.Proto,
 						"Remote Address", r.RemoteAddr,
 						"Panic Value", rcv,
