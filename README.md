@@ -86,6 +86,20 @@ serves the router over TLS-SRP with [go-tls-srp](https://github.com/misiektoja/g
 parse, such as ML-KEM. It does not check the request's signature, because RFC 7030 section 4.4.1
 tells the server to ignore the public key and signature of that request.
 
+### Post-quantum algorithms
+
+**ML-DSA** keys and certificates (FIPS 204, RFC 9881) work for enrollment, renewal and
+`/serverkeygen`, in the library and in `estclient`. They rely on `crypto/x509` and `crypto/tls`.
+The tests use ML-DSA-65. Limits:
+
+* An ML-DSA client certificate needs TLS 1.3, which has no `tls-unique` value. The client then
+  leaves out the challenge password that RFC 7030 section 3.5 builds from it.
+* **Composite ML-DSA** requests are accepted only through `CheckCSRSignature`, because
+  `crypto/x509` cannot verify them. The client cannot create them. No TLS library presents a
+  composite client certificate, so a composite certificate renews with `PasswordRenewal` or over
+  TLS-SRP.
+* **ML-KEM** keys cannot sign a PKCS#10 request, so they can only come from `/serverkeygen`.
+
 ## Quickstart
 
 ### Starting the server
