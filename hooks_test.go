@@ -170,7 +170,7 @@ func TestCheckBasicAuthResult(t *testing.T) {
 	}
 }
 
-// TestCheckCSRSignature checks that the CSR signature hook replaces the default check on enroll and serverkeygen.
+// TestCheckCSRSignature checks that the CSR signature hook replaces the default check on enroll.
 func TestCheckCSRSignature(t *testing.T) {
 	t.Parallel()
 
@@ -221,17 +221,33 @@ func TestCheckCSRSignature(t *testing.T) {
 
 			h := newHookRouter(t, est.ServerConfig{CheckCSRSignature: tc.check})
 
-			for _, endpoint := range []string{enrollEndpoint, "/.well-known/est/serverkeygen"} {
-				w := serve(h, http.MethodPost, endpoint, mimeTypePKCS10, tc.body(t))
+			w := serve(h, http.MethodPost, enrollEndpoint, mimeTypePKCS10, tc.body(t))
 
-				if w.Code != tc.status {
-					t.Fatalf("%s: got status %d, want %d: %s", endpoint, w.Code, tc.status, w.Body.String())
-				}
-				if !strings.Contains(w.Body.String(), tc.bodyContain) {
-					t.Errorf("%s: got body %q, want it to contain %q", endpoint, w.Body.String(), tc.bodyContain)
-				}
+			if w.Code != tc.status {
+				t.Fatalf("got status %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.bodyContain) {
+				t.Errorf("got body %q, want it to contain %q", w.Body.String(), tc.bodyContain)
 			}
 		})
+	}
+}
+
+// TestServerKeyGenIgnoresCSRSignature checks that serverkeygen accepts a request with a bad
+// signature and never calls the signature hook, as RFC 7030 section 4.4.1 requires.
+func TestServerKeyGenIgnoresCSRSignature(t *testing.T) {
+	t.Parallel()
+
+	for _, check := range []func(*x509.CertificateRequest) error{
+		nil,
+		func(*x509.CertificateRequest) error { return statusError{status: http.StatusForbidden} },
+	} {
+		h := newHookRouter(t, est.ServerConfig{CheckCSRSignature: check})
+
+		w := serve(h, http.MethodPost, "/.well-known/est/serverkeygen", mimeTypePKCS10, mustTamperCSR(t))
+		if w.Code != http.StatusOK {
+			t.Fatalf("hook set %t: got status %d, want 200: %s", check != nil, w.Code, w.Body.String())
+		}
 	}
 }
 
