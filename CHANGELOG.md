@@ -17,9 +17,9 @@ refused requests.
   without an `Authorization` header, so a host can accept a TLS client certificate. An `Error`
   with status 403 or 429 is sent as is, with its `Retry-After` value. Other errors still answer
   401 with a Basic challenge.
-- **`ServerConfig.CheckCSRSignature`** replaces the PKCS#10 signature check, for algorithms
-  `crypto/x509` cannot verify. A request whose algorithm the default check does not support gets
-  a 400 that says so.
+- **`ServerConfig.CheckCSRSignature`** replaces the PKCS#10 signature check of `/simpleenroll` and
+  `/simplereenroll`, for algorithms `crypto/x509` cannot verify. A request whose algorithm the
+  default check does not support gets a 400 that says so.
 - **`ServerConfig.Refusals`** receives each request the server refused before asking the CA, with
   the operation, the additional path segment, the status and the reason. Authentication failures
   and CA errors are not reported.
@@ -58,7 +58,9 @@ refused requests.
   certificates are no longer checked against the operating system's root store. They must chain to
   a self-signed certificate in the `/cacerts` response.
 - **`/serverkeygen`** returns PKCS#8 keys of algorithms `crypto/x509` cannot parse, such as ML-KEM,
-  instead of failing with 500.
+  instead of failing with 500. It no longer refuses a request whose signature does not verify,
+  because RFC 7030 section 4.4.1 tells the server to ignore the request's public key and
+  signature.
 - **`estclient`.** Boolean flags set to false, such as `-insecure=false`, are no longer treated as
   true. TPM key paths resolve against the configuration file's directory. A missing TPM private key
   setting or HSM `key_id` reports an error instead of crashing. `serverkeygen` and `tpmenroll`
