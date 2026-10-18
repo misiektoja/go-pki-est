@@ -1,0 +1,12 @@
+go-pki-est
+
+This product includes software developed as est
+(https://github.com/globalsign/est) by GMO GlobalSign, Inc.,
+licensed under the MIT License.
+
+go-pki-est is a modified derivative of that work. Files in this
+repository have been changed and added relative to the original.
+The modifications are recorded in the Git history of this
+repository and summarized in CHANGELOG.md.
+
+Modifications Copyright 2026 the go-pki-est contributors.
