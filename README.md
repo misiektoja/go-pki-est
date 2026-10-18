@@ -51,8 +51,28 @@ go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
 | `/fullcmc` | Not implemented |
 
 Every operation accepts the optional additional path segment. The server can require HTTP Basic
-authentication on top of TLS client certificates. RFC 8951 is only partly applied: messages still
-carry the `Content-Transfer-Encoding` header.
+authentication on top of TLS client certificates. Following RFC 8951, receivers ignore the
+`Content-Transfer-Encoding` header and accept spaces, tabs and line breaks in base64. The server
+still sends the header unless `ServerConfig.OmitTransferEncoding` is set, because some clients
+reject it.
+
+### Embedding the server
+
+`NewRouter` returns an `http.Handler`, so a host application can serve EST next to its own
+endpoints. These `ServerConfig` fields let the host take decisions the library cannot:
+
+* `CheckBasicAuth` runs for every enrollment request, also without an `Authorization` header, so
+  the host can accept a TLS client certificate instead of a password. Returning an `Error` with
+  status 403 or 429 sends that status as is, with its `Retry-After` value. Other errors answer 401.
+* `CheckCSRSignature` replaces the PKCS#10 signature check, for algorithms `crypto/x509` cannot
+  verify, such as composite ML-DSA.
+* `Refusals` receives the requests the server refused before asking the CA, such as a wrong
+  content type, a malformed request or a renewal whose subject changed. Use it for audit records
+  or rate limits.
+* `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
+
+`/serverkeygen` returns any PKCS#8 key the CA provides, including algorithms `crypto/x509` cannot
+parse, such as ML-KEM.
 
 ## Quickstart
 
