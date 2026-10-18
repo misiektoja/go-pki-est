@@ -18,6 +18,7 @@ package est
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 )
 
 // estError is an internal error structure implementing est.Error.
@@ -90,8 +91,9 @@ var (
 		desc:   "client certificate must be provided for /simplereenroll",
 	}
 	errRateLimitExceeded = &estError{
-		status: http.StatusTooManyRequests,
-		desc:   "rate limit exceeded",
+		status:     http.StatusTooManyRequests,
+		desc:       "rate limit exceeded",
+		retryAfter: 1,
 	}
 	errSubjectChanged = &estError{
 		status: http.StatusForbidden,
@@ -130,6 +132,9 @@ func (e estError) RetryAfter() int {
 // Write writes the error to the supplied writer.
 func (e estError) Write(w http.ResponseWriter) {
 	w.Header().Set(contentTypeHeader, mimeTypeTextPlainUTF8)
+	if e.retryAfter > 0 {
+		w.Header().Set(retryAfterHeader, strconv.Itoa(e.retryAfter))
+	}
 	w.WriteHeader(e.status)
 	w.Write([]byte(fmt.Sprintf("%d %s\n", e.status, e.desc)))
 }
