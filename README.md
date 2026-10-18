@@ -70,6 +70,10 @@ endpoints. These `ServerConfig` fields let the host take decisions the library c
   content type, a malformed request or a renewal whose subject changed. Use it for audit records
   or rate limits.
 * `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
+* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a TLS client certificate.
+  RFC 7030 section 2.3 allows this when the certificate being renewed cannot be used for TLS.
+  `CheckBasicAuth` must accept the username and password. The CA receives a nil certificate and
+  decides which certificate is renewed. It is off by default.
 
 TLS-SRP (RFC 5054) signs a client in with a username and password during the TLS handshake. libest
 clients use it with `--srp`. A host that terminates TLS-SRP passes the username to the router with
