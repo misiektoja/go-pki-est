@@ -377,6 +377,7 @@ func (c *Client) TPMEnroll(
 			{contentType: mimeTypeOctetStream, data: ekPub},
 			{contentType: mimeTypeOctetStream, data: akPub},
 		},
+		true,
 	)
 	if err != nil {
 		return nil, nil, nil, err

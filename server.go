@@ -58,11 +58,33 @@ type ServerConfig struct {
 	RateLimit int
 
 	// CheckBasicAuth is an optional callback function to check HTTP Basic
-	// Authentication credentials. A nil error means that authentication was
-	// successful, and a non-nil error means that it was not. If CheckBasicAuth
-	// is nil, then HTTP Basic Authentication is not required for any EST
-	// operation, but access to the /healthcheck endpoint will be blocked.
+	// Authentication credentials. It runs for every enrollment request, with
+	// empty credentials when the request has no Authorization header, so it
+	// can also accept a TLS client certificate from the request. A nil error
+	// means that authentication was successful. An error that implements Error
+	// with a status other than 401, such as 403 or 429, is sent as is with its
+	// Retry-After value. Any other error answers 401 with a Basic challenge.
+	// If CheckBasicAuth is nil, then HTTP Basic Authentication is not required
+	// for any EST operation, but access to the /healthcheck endpoint will be
+	// blocked.
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
+
+	// CheckCSRSignature optionally verifies the signature of each PKCS#10
+	// request. If nil, the server uses (*x509.CertificateRequest).CheckSignature,
+	// which refuses algorithms crypto/x509 cannot verify, such as composite
+	// ML-DSA. crypto/x509 leaves PublicKey nil for keys it does not know. An
+	// error that implements Error is sent as is. Any other error answers 400.
+	CheckCSRSignature func(csr *x509.CertificateRequest) error
+
+	// Refusals optionally receives the requests the server refuses itself,
+	// before or instead of calling the CA.
+	Refusals RefusalRecorder
+
+	// OmitTransferEncoding leaves the Content-Transfer-Encoding header out of
+	// responses and their multipart parts. Bodies stay base64 encoded. RFC 8951
+	// tells receivers to ignore the header. Some clients fail when it is
+	// present.
+	OmitTransferEncoding bool
 
 	// TrustProxyHeaders sets the request's RemoteAddr from the X-Real-IP or
 	// X-Forwarded-For header. It defaults to false. Enable it only when every
@@ -80,6 +102,9 @@ const (
 	ctxKeyCertCache
 	ctxKeyLogger
 	ctxKeyReenroll
+	ctxKeyCSRCheck
+	ctxKeyRefusals
+	ctxKeyOmitTransferEncoding
 )
 
 // Server constants.
@@ -91,7 +116,12 @@ const (
 // Log field and message constants.
 const (
 	logFieldError                 = "Error"
+	logMsgAuthFailed              = "authentication refused"
 	logMsgCACertsFailed           = "failed to retrieve CA certificates"
+	logMsgHostNotAllowed          = "host not allowed"
+	logMsgRateLimited             = "rate limit exceeded"
+	logMsgRefusalRecordFailed     = "failed to record refusal"
+	logMsgRenewalRefused          = "renewal refused"
 	logMsgContentTypeInvalid      = "invalid content-type"
 	logMsgCSRAttrsFailed          = "failed to retrieve CSR attributes"
 	logMsgEnrollFailed            = "failed to enroll"
@@ -130,6 +160,29 @@ func isReenroll(ctx context.Context) bool {
 	return ok
 }
 
+// csrCheckFromContext returns the configured CSR signature check. Without
+// one it returns the crypto/x509 check.
+func csrCheckFromContext(ctx context.Context) func(*x509.CertificateRequest) error {
+	if check, ok := ctx.Value(ctxKeyCSRCheck).(func(*x509.CertificateRequest) error); ok && check != nil {
+		return check
+	}
+	return (*x509.CertificateRequest).CheckSignature
+}
+
+// refusalsFromContext returns the configured refusal recorder. It returns nil
+// when none is configured.
+func refusalsFromContext(ctx context.Context) RefusalRecorder {
+	rec, _ := ctx.Value(ctxKeyRefusals).(RefusalRecorder)
+	return rec
+}
+
+// sendTransferEncoding reports whether responses carry the
+// Content-Transfer-Encoding header.
+func sendTransferEncoding(ctx context.Context) bool {
+	omit, _ := ctx.Value(ctxKeyOmitTransferEncoding).(bool)
+	return !omit
+}
+
 // NewRouter creates a new EST server mux.
 func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r := chi.NewRouter()
@@ -153,6 +206,9 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	}
 	r.Use(withLogger(logger))
 	r.Use(recoverer(logger))
+	r.Use(middleware.WithValue(ctxKeyRefusals, cfg.Refusals))
+	r.Use(middleware.WithValue(ctxKeyCSRCheck, cfg.CheckCSRSignature))
+	r.Use(middleware.WithValue(ctxKeyOmitTransferEncoding, cfg.OmitTransferEncoding))
 	r.Use(addServerHeader)
 	r.Use(addSecureHeaders)
 	if len(cfg.AllowedHosts) > 0 {
@@ -256,7 +312,7 @@ func cacerts(w http.ResponseWriter, r *http.Request) {
 	// Update CA certificates cache with each explicit call to /cacerts.
 	certCacheFromContext(ctx).Add(aps, certs)
 
-	writeResponse(w, mimeTypePKCS7, true, certs)
+	writeResponse(ctx, w, mimeTypePKCS7, true, certs)
 }
 
 // csrattrs services the /csrattrs endpoint.
@@ -269,7 +325,7 @@ func csrattrs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResponse(w, mimeTypeCSRAttrs, true, attrs)
+	writeResponse(ctx, w, mimeTypeCSRAttrs, true, attrs)
 }
 
 // enroll services the /simpleenroll endpoint.
@@ -277,8 +333,9 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	aps := chi.URLParam(r, apsParamName)
 
-	csr, err := readCSRRequest(r.Body, true)
-	if writeOnError(ctx, w, logMsgReadBodyFailed, err) {
+	csr, err := readCSRRequest(r.Body, csrCheckFromContext(ctx))
+	if err != nil {
+		refuse(w, r, logMsgReadBodyFailed, err)
 		return
 	}
 
@@ -316,7 +373,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		// authentication for renew operations.
 
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-			errNoClientCertificate.Write(w)
+			refuse(w, r, logMsgRenewalRefused, errNoClientCertificate)
 			return
 		}
 
@@ -326,7 +383,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 
 		// Compare Subject fields.
 		if !bytes.Equal(csr.RawSubject, cert.RawSubject) {
-			errSubjectChanged.Write(w)
+			refuse(w, r, logMsgRenewalRefused, errSubjectChanged)
 			return
 		}
 
@@ -349,13 +406,18 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !bytes.Equal(csrSAN.Value, certSAN.Value) {
-			errSubjectChanged.Write(w)
+			refuse(w, r, logMsgRenewalRefused, errSubjectChanged)
 			return
 		}
 
-		// Verify certificate against CA certificates.
-		err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r)
-		if writeOnError(ctx, w, logMsgVerifyFailed, err) {
+		// Verify certificate against CA certificates. A CA failure while
+		// fetching them is not a refusal of the client.
+		if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+			if errors.Is(err, errInvalidClientCert) {
+				refuse(w, r, logMsgVerifyFailed, err)
+			} else {
+				writeOnError(ctx, w, logMsgVerifyFailed, err)
+			}
 			return
 		}
 	}
@@ -371,7 +433,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResponse(w, mimeTypePKCS7CertsOnly, true, cert)
+	writeResponse(ctx, w, mimeTypePKCS7CertsOnly, true, cert)
 }
 
 // serverkeygen services the /serverkeygen endpoint.
@@ -379,8 +441,9 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	aps := chi.URLParam(r, apsParamName)
 
-	csr, err := readCSRRequest(r.Body, true)
-	if writeOnError(ctx, w, logMsgReadBodyFailed, err) {
+	csr, err := readCSRRequest(r.Body, csrCheckFromContext(ctx))
+	if err != nil {
+		refuse(w, r, logMsgReadBodyFailed, err)
 		return
 	}
 
@@ -390,14 +453,16 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Encode and write response.
+	// Encode and write response. The key is classified by its structure so
+	// that keys crypto/x509 cannot parse, such as ML-KEM or composite ML-DSA
+	// keys, are still sent as PKCS#8.
 	var keyContentType string
-	if _, p8err := x509.ParsePKCS8PrivateKey(key); p8err == nil {
+	if isPKCS8(key) {
 		keyContentType = mimeTypePKCS8
 	} else if _, p7err := pkcs7.Parse(key); p7err == nil {
 		keyContentType = mimeTypePKCS7GenKey
 	} else {
-		LoggerFromContext(ctx).Errorf("failed to parse private key: %v, %v", p8err, p7err)
+		LoggerFromContext(ctx).Errorf("failed to classify private key: not PKCS#8, %v", p7err)
 		errInternal.Write(w)
 		return
 	}
@@ -408,12 +473,13 @@ func serverkeygen(w http.ResponseWriter, r *http.Request) {
 			{contentType: keyContentType, data: key},
 			{contentType: mimeTypePKCS7CertsOnly, data: cert},
 		},
+		sendTransferEncoding(ctx),
 	)
 	if writeOnError(ctx, w, logMsgMultipartEncodeFailed, err) {
 		return
 	}
 
-	writeResponse(w, contentType, false, buf.Bytes())
+	writeResponse(ctx, w, contentType, false, buf.Bytes())
 }
 
 // tpmenroll services the /tpmenroll endpoint.
@@ -436,7 +502,8 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 			{contentType: mimeTypeOctetStream, data: &akPub},
 		},
 	)
-	if writeOnError(ctx, w, logMsgMultipartDecodeFailed, err) {
+	if err != nil {
+		refuse(w, r, logMsgMultipartDecodeFailed, err)
 		return
 	}
 
@@ -447,7 +514,7 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 	// so none of the protection depends on the EK public area and in general
 	// it can be manipulated and is unreliable.
 	if err := validatePublicAreaPublicKey(ekPub, ekCerts[0].PublicKey); err != nil {
-		writeOnError(ctx, w, logMsgPublicKeyInvalid, err)
+		refuse(w, r, logMsgPublicKeyInvalid, err)
 		return
 	}
 
@@ -476,12 +543,13 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 			{contentType: mimeTypeOctetStream, data: encSeed},
 			{contentType: mimeTypePKCS7Enveloped, data: cred},
 		},
+		sendTransferEncoding(ctx),
 	)
 	if writeOnError(ctx, w, logMsgMultipartEncodeFailed, err) {
 		return
 	}
 
-	writeResponse(w, contentType, false, buf.Bytes())
+	writeResponse(ctx, w, contentType, false, buf.Bytes())
 }
 
 // writeOnError writes returns true and writes an error to the provided HTTP
@@ -499,7 +567,7 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		}
 
 		w.Header().Set(contentTypeHeader, mimeTypeTextPlainUTF8)
-		if secs := estErr.RetryAfter(); secs != 0 {
+		if secs := estErr.RetryAfter(); secs > 0 {
 			w.Header().Set(retryAfterHeader, strconv.Itoa(secs))
 		}
 
@@ -605,7 +673,7 @@ func requireContentType(t string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if err := verifyRequestType(r.Header.Get(contentTypeHeader), t); err != nil {
-				writeOnError(r.Context(), w, logMsgContentTypeInvalid, err)
+				refuse(w, r, logMsgContentTypeInvalid, err)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -659,7 +727,7 @@ func verifyAllowedHosts(allowed []string) func(next http.Handler) http.Handler {
 			}
 
 			if !goodHost {
-				errHostNotAllowed.Write(w)
+				refuse(w, r, logMsgHostNotAllowed, errHostNotAllowed)
 				return
 			}
 
@@ -676,7 +744,7 @@ func rateLimit(limit int) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !limiter.Allow() {
-				errRateLimitExceeded.Write(w)
+				refuse(w, r, logMsgRateLimited, errRateLimitExceeded)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -697,7 +765,9 @@ func maxBodySize(sz int64) func(next http.Handler) http.Handler {
 
 // requireBasicAuth is middleware which optionally requires HTTP Basic
 // Authentication. If checkFunc is nil, authentication will succeed if and
-// only if optional is true.
+// only if optional is true. An Error from checkFunc with a status other than
+// 401 is sent as is, so the host can refuse with 403 or ask for a retry with
+// 429.
 func requireBasicAuth(
 	checkFunc func(context.Context, *http.Request, string, string, string) error,
 	optional bool,
@@ -709,8 +779,15 @@ func requireBasicAuth(
 			if checkFunc != nil {
 				aps := chi.URLParam(r, apsParamName)
 				username, password, _ := r.BasicAuth()
-				if err := checkFunc(r.Context(), r, aps, username, password); err == nil {
+				err := checkFunc(r.Context(), r, aps, username, password)
+				if err == nil {
 					authenticated = true
+				} else {
+					var estErr Error
+					if errors.As(err, &estErr) && estErr.StatusCode() != http.StatusUnauthorized {
+						writeOnError(r.Context(), w, logMsgAuthFailed, err)
+						return
+					}
 				}
 			} else if optional {
 				authenticated = true

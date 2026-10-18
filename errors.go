@@ -74,6 +74,10 @@ var (
 		status: http.StatusBadRequest,
 		desc:   "invalid PKCS10 certificate signing request signature",
 	}
+	errUnsupportedPKCS10Signature = &estError{
+		status: http.StatusBadRequest,
+		desc:   "unsupported PKCS10 certificate signing request signature algorithm",
+	}
 	errInvalidTPMPublicArea = &estError{
 		status: http.StatusBadRequest,
 		desc:   "malformed TPM object public area",

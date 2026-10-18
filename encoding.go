@@ -19,6 +19,8 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -176,11 +178,11 @@ func readAllBase64Request(r io.Reader) ([]byte, error) {
 	return decoded, nil
 }
 
-// readCSRResponse reads all data from a reader and decodes it as a base64
-// encoded PKCS#10 CSR. If checkSignature is true, the CSR signature will be
-// cryptographically verified after decoding. It returns an error implementing
-// Error and is intended to be used by server code.
-func readCSRRequest(r io.Reader, checkSignature bool) (*x509.CertificateRequest, error) {
+// readCSRRequest reads all data from a reader and decodes it as a base64
+// encoded PKCS#10 CSR. If check is not nil, it verifies the CSR signature after
+// decoding. It returns an error implementing Error and is intended to be used
+// by server code.
+func readCSRRequest(r io.Reader, check func(*x509.CertificateRequest) error) (*x509.CertificateRequest, error) {
 	der, estErr := readAllBase64Request(r)
 	if estErr != nil {
 		return nil, estErr
@@ -191,9 +193,17 @@ func readCSRRequest(r io.Reader, checkSignature bool) (*x509.CertificateRequest,
 		return nil, errInvalidPKCS10
 	}
 
-	if checkSignature {
-		if err := csr.CheckSignature(); err != nil {
-			return nil, errInvalidPKCS10Signature
+	if check != nil {
+		if err := check(csr); err != nil {
+			var hostErr Error
+			switch {
+			case errors.As(err, &hostErr):
+				return nil, err
+			case errors.Is(err, x509.ErrUnsupportedAlgorithm):
+				return nil, errUnsupportedPKCS10Signature
+			default:
+				return nil, errInvalidPKCS10Signature
+			}
 		}
 	}
 
@@ -287,4 +297,22 @@ func breakLines(b []byte, n int) []byte {
 	}
 
 	return buf.Bytes()
+}
+
+// oneAsymmetricKey is the PKCS#8 PrivateKeyInfo structure as extended by
+// RFC 5958.
+type oneAsymmetricKey struct {
+	Version    int
+	Algorithm  pkix.AlgorithmIdentifier
+	PrivateKey []byte
+	Attributes asn1.RawValue  `asn1:"optional,tag:0"`
+	PublicKey  asn1.BitString `asn1:"optional,tag:1"`
+}
+
+// isPKCS8 reports whether der is a PKCS#8 private key of any algorithm. It
+// checks the structure only, so it accepts keys crypto/x509 cannot parse.
+func isPKCS8(der []byte) bool {
+	var key oneAsymmetricKey
+	rest, err := asn1.Unmarshal(der, &key)
+	return err == nil && len(rest) == 0 && (key.Version == 0 || key.Version == 1) && len(key.PrivateKey) > 0
 }
