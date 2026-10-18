@@ -3,83 +3,48 @@
 Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
 [globalsign/est](https://github.com/globalsign/est). Its v1.0.7 release has no entry here.
 
-## [1.1.0] - TBD
+## [1.1.0] - 2026-10-19
 
-The first release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
-module path. It fixes client timeouts, the TLS 1.2 proof-of-possession password, the Basic
-challenge libest and Bouncy Castle need, server error responses and several `estclient` and `estserver` defects. The server no longer trusts
-client-supplied address headers unless configured to. New `ServerConfig` fields let a host
-application authenticate by client certificate, verify other signature algorithms and record
-refused requests. The server accepts TLS-SRP logins and `estserver` can listen over TLS-SRP.
+First release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
+module path. Its version numbers continue from v1.0.7. It adds TLS-SRP logins and hooks for host
+authentication. It fixes client timeouts, password sign-in from libest and Bouncy Castle and
+several server and command line defects.
 
 ### Added
-- **Host authentication results.** `CheckBasicAuth` runs for every enrollment request, also
-  without an `Authorization` header, so a host can accept a TLS client certificate. An `Error`
-  with status 403 or 429 is sent as is, with its `Retry-After` value. Other errors still answer
-  401 with a Basic challenge.
-- **`ServerConfig.CheckCSRSignature`** replaces the PKCS#10 signature check of `/simpleenroll` and
-  `/simplereenroll`, for algorithms `crypto/x509` cannot verify. A request whose algorithm the
-  default check does not support gets a 400 that says so.
-- **`ServerConfig.Refusals`** receives each request the server refused before asking the CA, with
-  the operation, the additional path segment, the status and the reason. Authentication failures
-  and CA errors are not reported.
-- **`ServerConfig.OmitTransferEncoding`** leaves the `Content-Transfer-Encoding` header out of
-  responses and their parts. Bodies stay base64 encoded.
-- **TLS-SRP logins.** A host passes the username of a TLS-SRP connection with `WithSRPUsername`.
-  `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`. `/simplereenroll` accepts
-  such a request without a client certificate and calls `CA.Reenroll` with a nil certificate, as
-  libest does. The request log shows these requests as `https`.
-- **`estserver` TLS-SRP listener.** The `tls_srp` setting serves EST on a second port over TLS 1.2
-  with the SRP AES cipher suites, using the users of an OpenSSL srpvfile. Unknown users fail like
-  a wrong password when `unknown_user_seed` is set and get `unknown_psk_identity` otherwise.
+- **TLS-SRP logins.** `WithSRPUsername` passes the username of a TLS-SRP connection to
+  `CheckBasicAuth` and the CA. `/simplereenroll` accepts such a request without a client
+  certificate. The `estserver` setting `tls_srp` serves a second port from an OpenSSL srpvfile.
+- **Host authentication.** `CheckBasicAuth` runs for every enrollment request, also without a
+  password, so a host can accept a client certificate instead. It can answer 403 or 429 with
+  `Retry-After`.
+- **`ServerConfig` hooks.** `CheckCSRSignature` verifies algorithms `crypto/x509` cannot.
+  `Refusals` reports requests refused before they reach the CA. `OmitTransferEncoding` drops the
+  `Content-Transfer-Encoding` header.
 
 ### Changed
-- **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`, so only
-  import paths change.
-- **Go 1.27.1** or newer is required.
-- **Proxy address headers** (`X-Real-IP` and `X-Forwarded-For`) are trusted only when
-  `ServerConfig.TrustProxyHeaders` or the `estserver` setting `trust_proxy_headers` is true. Both
-  default to false, so the server sees the connection's peer address. Deployments that rely on
-  forwarded addresses must enable the setting. Enable it only behind a proxy that removes or
-  overwrites both headers.
-- **`User-Agent` and `Server` headers** and the `version` output name go-pki-est instead of
-  GlobalSign.
-- **`estclient serverkeygen -keyout`** removes group and other read and write permissions from an
-  existing output file on Unix before writing the private key. This also removes group access that
-  was set on purpose. Windows ACLs are unchanged.
+- **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`. Go 1.27.1
+  or newer is required.
+- **Proxy address headers** `X-Real-IP` and `X-Forwarded-For` are ignored unless
+  `ServerConfig.TrustProxyHeaders` or the `estserver` setting `trust_proxy_headers` is true.
+  Enable it only behind a proxy that overwrites both headers.
+- **`User-Agent` and `Server` headers** name go-pki-est instead of GlobalSign.
+- **`estclient serverkeygen -keyout`** makes an existing key file private to its owner on Unix
+  before writing.
 
 ### Fixed
-- **Client timeouts** cover connection setup, so a stalled TLS handshake no longer outlives the
-  request context or `estclient -timeout`. Each operation closes its connection.
-- **Proof of possession over TLS 1.2.** The `tls-unique` challenge password no longer ends with a
-  line break, so it matches the value RFC 7030 section 3.5 defines. Adding it keeps the CSR's
-  critical extensions and its other supported attributes.
-- **Basic challenge for libest and Bouncy Castle.** A 401 sends its challenge as
-  `WWW-Authenticate` instead of Go's canonical `Www-Authenticate`. libest matches header names
-  case-sensitively and could not sign in with a password before. In process, `Header().Get` no
-  longer finds the header. The challenge has no body, because the Bouncy Castle client fails when
-  it closes a challenge it has not read. Clients that showed the body now see only the 401 status,
-  which `estclient` reports as `Unauthorized`.
-- **Server error responses.** A recovered panic answers 500 instead of an empty 200. A `/tpmenroll`
-  request with missing parts gets 400. Reenrollment over plain HTTP gets 403.
-- **Request handling.** `/tpmenroll` ignores `Content-Transfer-Encoding` on its parts like the other
-  operations. Base64 bodies may contain spaces and tabs as well as line breaks, as RFC 8951 asks. A
-  request over the body limit gets 413 instead of 500. Bracketed IPv6 entries in `AllowedHosts`,
-  such as `[::1]`, match. Multipart errors name the right part. A request over `RateLimit` gets
-  `Retry-After: 1` with its 429.
-- **Reenrollment trust.** When `/cacerts` holds no self-signed certificate, reenrollment client
-  certificates are no longer checked against the operating system's root store. They must chain to
-  a self-signed certificate in the `/cacerts` response.
-- **`/serverkeygen`** returns PKCS#8 keys of algorithms `crypto/x509` cannot parse, such as ML-KEM,
-  instead of failing with 500. It no longer refuses a request whose signature does not verify,
-  because RFC 7030 section 4.4.1 tells the server to ignore the request's public key and
-  signature.
-- **`estclient`.** Boolean flags set to false, such as `-insecure=false`, are no longer treated as
-  true. TPM key paths resolve against the configuration file's directory. A missing TPM private key
-  setting or HSM `key_id` reports an error instead of crashing. `serverkeygen` and `tpmenroll`
-  report failures to write the key or certificate.
-- **`estserver`** exits with an error when it cannot listen instead of running without a listener.
-  A TLS configuration without `listen_address` keeps the default port 8443 instead of 443.
+- **Client timeouts** cover the TLS handshake.
+- **Proof of possession over TLS 1.2.** The `tls-unique` challenge password matches RFC 7030
+  section 3.5.
+- **libest and Bouncy Castle** can sign in with a password. The 401 challenge is sent as
+  `WWW-Authenticate` without a body.
+- **Server responses.** A panic answers 500, a malformed request 400, an oversized body 413 and
+  reenrollment over plain HTTP 403. Base64 bodies may contain spaces and tabs, as RFC 8951
+  allows.
+- **Reenrollment trust** no longer falls back to the operating system's root store.
+- **`/serverkeygen`** returns keys that `crypto/x509` cannot parse, such as ML-KEM. It ignores the
+  request's signature, as RFC 7030 section 4.4.1 asks.
+- **`estclient` and `estserver`.** `-flag=false` works. TPM key paths resolve against the
+  configuration file. `estserver` exits when it cannot listen.
 
 ## [1.0.6] - 2021-02-21
 ### Added
@@ -109,6 +74,7 @@ refused requests. The server accepts TLS-SRP logins and `estserver` can listen o
 ### Added
 - Initial release
 
+[1.1.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.1.0
 [1.0.6]: https://github.com/globalsign/est/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/globalsign/est/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/globalsign/est/compare/v1.0.3...v1.0.4
