@@ -71,6 +71,13 @@ endpoints. These `ServerConfig` fields let the host take decisions the library c
   or rate limits.
 * `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
 
+TLS-SRP (RFC 5054) signs a client in with a username and password during the TLS handshake. libest
+clients use it with `--srp`. A host that terminates TLS-SRP passes the username to the router with
+`WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
+`/simplereenroll` then accepts the request without a client certificate and calls `CA.Reenroll`
+with a nil certificate, as libest does. The CA decides which certificate is renewed. `estserver`
+serves the router over TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
+
 `/serverkeygen` returns any PKCS#8 key the CA provides, including algorithms `crypto/x509` cannot
 parse, such as ML-KEM. It does not check the request's signature, because RFC 7030 section 4.4.1
 tells the server to ignore the public key and signature of that request.
