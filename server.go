@@ -803,8 +803,11 @@ func requireBasicAuth(
 					reqHost = host
 				}
 
-				w.Header().Set(wwwAuthenticateHeader, fmt.Sprintf(`Basic realm="estserver@%s"`,
-					url.QueryEscape(reqHost)))
+				// The entry is set directly so HTTP/1.1 sends the RFC 9110 spelling. libest compares
+				// header names case-sensitively and ignores Go's canonical Www-Authenticate. As a
+				// result, Header().Get does not find the entry.
+				w.Header()[wwwAuthenticateHeader] = []string{fmt.Sprintf(`Basic realm="estserver@%s"`,
+					url.QueryEscape(reqHost))}
 				errAuthRequired.Write(w)
 				return
 			}
