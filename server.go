@@ -620,7 +620,7 @@ func requireContentType(t string) func(next http.Handler) http.Handler {
 // returning the name and version of the server software.
 func addServerHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(serverHeader, "GlobalSign EST Server "+estVersion)
+		w.Header().Set(serverHeader, "go-pki-est EST server "+estVersion)
 		next.ServeHTTP(w, r)
 	})
 }
