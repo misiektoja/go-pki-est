@@ -22,7 +22,7 @@ several server and command line defects.
   `Content-Transfer-Encoding` header.
 
 ### Changed
-- **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`. Go 1.27.1
+- **Module path** is `github.com/misiektoja/go-pki-est`. The package name stays `est`. Go 1.27.2
   or newer is required.
 - **Proxy address headers** `X-Real-IP` and `X-Forwarded-For` are ignored unless
   `ServerConfig.TrustProxyHeaders` or the `estserver` setting `trust_proxy_headers` is true.
