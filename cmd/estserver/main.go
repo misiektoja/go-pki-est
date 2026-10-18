@@ -258,6 +258,15 @@ func main() {
 		}
 	}()
 
+	// Serve the same router over TLS-SRP if configured.
+	var srpServer *http.Server
+	if cfg.TLSSRP != nil {
+		srpServer, err = listenSRP(cfg.TLSSRP, r, logger)
+		if err != nil {
+			log.Fatalf("failed to start TLS-SRP listener: %v", err)
+		}
+	}
+
 	// Wait for signal.
 	got := <-stop
 
@@ -265,4 +274,7 @@ func main() {
 	logger.Infof("Closing EST server with signal %v", got)
 
 	s.Close()
+	if srpServer != nil {
+		srpServer.Close()
+	}
 }

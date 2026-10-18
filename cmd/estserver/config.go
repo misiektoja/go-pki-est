@@ -25,6 +25,7 @@ import (
 type config struct {
 	MockCA              *mockCAConfig `json:"mock_ca,omitempty"`
 	TLS                 *tlsConfig    `json:"tls,omitempty"`
+	TLSSRP              *tlsSRPConfig `json:"tls_srp,omitempty"`
 	AllowedHosts        []string      `json:"allowed_hosts,omitempty"`
 	HealthCheckPassword string        `json:"healthcheck_password"`
 	RateLimit           int           `json:"rate_limit"`
@@ -45,6 +46,13 @@ type tlsConfig struct {
 	Certs      string   `json:"certificates"`
 	Key        string   `json:"private_key"`
 	ClientCAs  []string `json:"client_cas,omitempty"`
+}
+
+// tlsSRPConfig contains the configuration of the optional TLS-SRP listener.
+type tlsSRPConfig struct {
+	ListenAddr      string `json:"listen_address"`
+	VerifierFile    string `json:"verifier_file"`
+	UnknownUserSeed string `json:"unknown_user_seed,omitempty"`
 }
 
 // configFromFile returns a new EST server configuration from a JSON-encoded
@@ -77,6 +85,11 @@ const sample = `{
             "/path/to/second/client/CA/root/certificate.pem",
             "/path/to/third/client/CA/root/certificate.pem"
         ]
+    },
+    "tls_srp": {
+        "listen_address": "localhost:8444",
+        "verifier_file": "/path/to/srpvfile",
+        "unknown_user_seed": "a long random string kept across restarts"
     },
     "allowed_hosts": [
         "localhost",
