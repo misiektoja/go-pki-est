@@ -27,8 +27,10 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -160,13 +162,52 @@ func TestCheckBasicAuthResult(t *testing.T) {
 			if gotUser != "" || gotPassword != "" {
 				t.Errorf("got credentials %q/%q for a request without an Authorization header", gotUser, gotPassword)
 			}
-			if got := w.Header().Get("WWW-Authenticate") != ""; got != tc.challenge {
+			if got := len(w.Header()["WWW-Authenticate"]) > 0; got != tc.challenge {
 				t.Errorf("got Basic challenge %t, want %t", got, tc.challenge)
 			}
 			if got := w.Header().Get("Retry-After"); got != tc.retryAfter {
 				t.Errorf("got Retry-After %q, want %q", got, tc.retryAfter)
 			}
 		})
+	}
+}
+
+// TestBasicChallengeSpelling checks that the Basic challenge goes out as WWW-Authenticate on the wire.
+// libest compares header names case-sensitively and ignores Go's canonical Www-Authenticate.
+func TestBasicChallengeSpelling(t *testing.T) {
+	t.Parallel()
+
+	h := newHookRouter(t, est.ServerConfig{
+		CheckBasicAuth: func(ctx context.Context, r *http.Request, aps, username, password string) error {
+			return errors.New("bad credentials")
+		},
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	body := mustMakeBase64CSR(t, "Device")
+	request := "POST " + enrollEndpoint + " HTTP/1.1\r\nHost: est.example.test\r\nContent-Type: " + mimeTypePKCS10 +
+		"\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\nConnection: close\r\n\r\n" + string(body)
+	if _, err := io.WriteString(conn, request); err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	raw, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+
+	head, _, _ := strings.Cut(string(raw), "\r\n\r\n")
+	if !strings.HasPrefix(head, "HTTP/1.1 401") {
+		t.Fatalf("got response %q, want 401", head)
+	}
+	if !strings.Contains(head, "\r\nWWW-Authenticate: Basic realm=") {
+		t.Errorf("challenge header not spelled WWW-Authenticate: %q", head)
 	}
 }
 
