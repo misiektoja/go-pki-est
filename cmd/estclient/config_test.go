@@ -41,8 +41,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/mockca"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
 
 	"github.com/globalsign/pemfile"
 )

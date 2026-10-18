@@ -46,10 +46,10 @@ import (
 	"github.com/smallstep/scep/x509util"
 	"go.mozilla.org/pkcs7"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/basiclogger"
-	"github.com/globalsign/est/internal/mockca"
-	"github.com/globalsign/est/internal/tpm"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/basiclogger"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
+	"github.com/misiektoja/go-pki-est/internal/tpm"
 )
 
 // Test constants.

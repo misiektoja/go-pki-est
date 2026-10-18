@@ -1,4 +1,4 @@
-module github.com/globalsign/est
+module github.com/misiektoja/go-pki-est
 
 go 1.27.1
 

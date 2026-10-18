@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/globalsign/est"
+	"github.com/misiektoja/go-pki-est"
 )
 
 func TestCSRAttrsMarshal(t *testing.T) {

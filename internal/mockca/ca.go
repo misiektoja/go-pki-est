@@ -38,8 +38,8 @@ import (
 
 	"github.com/globalsign/pemfile"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/tpm"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/tpm"
 )
 
 // MockCA is a mock, non-production certificate authority useful for testing

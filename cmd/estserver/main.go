@@ -35,10 +35,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/globalsign/est"
-	"github.com/globalsign/est/internal/basiclogger"
-	"github.com/globalsign/est/internal/mockca"
 	"github.com/globalsign/pemfile"
+	"github.com/misiektoja/go-pki-est"
+	"github.com/misiektoja/go-pki-est/internal/basiclogger"
+	"github.com/misiektoja/go-pki-est/internal/mockca"
 )
 
 const (
