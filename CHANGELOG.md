@@ -7,7 +7,7 @@ Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
 
 The first release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
 module path. It fixes client timeouts, the TLS 1.2 proof-of-possession password, the Basic
-challenge libest needs, server error responses and several `estclient` and `estserver` defects. The server no longer trusts
+challenge libest and Bouncy Castle need, server error responses and several `estclient` and `estserver` defects. The server no longer trusts
 client-supplied address headers unless configured to. New `ServerConfig` fields let a host
 application authenticate by client certificate, verify other signature algorithms and record
 refused requests.
@@ -47,9 +47,12 @@ refused requests.
 - **Proof of possession over TLS 1.2.** The `tls-unique` challenge password no longer ends with a
   line break, so it matches the value RFC 7030 section 3.5 defines. Adding it keeps the CSR's
   critical extensions and its other supported attributes.
-- **Basic challenge for libest.** A 401 sends its challenge as `WWW-Authenticate` instead of Go's
-  canonical `Www-Authenticate`. libest matches header names case-sensitively and could not sign
-  in with a password before. In process, `Header().Get` no longer finds the header.
+- **Basic challenge for libest and Bouncy Castle.** A 401 sends its challenge as
+  `WWW-Authenticate` instead of Go's canonical `Www-Authenticate`. libest matches header names
+  case-sensitively and could not sign in with a password before. In process, `Header().Get` no
+  longer finds the header. The challenge has no body, because the Bouncy Castle client fails when
+  it closes a challenge it has not read. Clients that showed the body now see only the 401 status,
+  which `estclient` reports as `Unauthorized`.
 - **Server error responses.** A recovered panic answers 500 instead of an empty 200. A `/tpmenroll`
   request with missing parts gets 400. Reenrollment over plain HTTP gets 403.
 - **Request handling.** `/tpmenroll` ignores `Content-Transfer-Encoding` on its parts like the other
