@@ -1,16 +1,18 @@
 # Changelog
 
-Notable changes to go-pki-est. Entries for 1.0.6 and earlier come from
-[globalsign/est](https://github.com/globalsign/est). Its v1.0.7 release has no entry here.
+Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
+[globalsign/est](https://github.com/globalsign/est).
 
 ## [1.1.0] - 2026-10-19
 
 First release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
-module path. Its version numbers continue from v1.0.7. It adds TLS-SRP logins, password renewal
-and hooks for host authentication. It fixes client timeouts, password sign-in from libest and
-Bouncy Castle and several server and command line defects.
+module path. Its version numbers continue from v1.0.7. It adds TLS-SRP logins, password renewal,
+ML-DSA support and hooks for host authentication. It fixes client timeouts, password sign-in from
+libest and Bouncy Castle and several server and command line defects.
 
 ### Added
+- **ML-DSA** keys and certificates work for enrollment, renewal and `/serverkeygen`, in the
+  library and in `estclient`. Renewal with an ML-DSA client certificate needs TLS 1.3.
 - **Password renewal.** With `ServerConfig.PasswordRenewal`, `/simplereenroll` accepts a password
   instead of a client certificate, for certificates that cannot be used in TLS, such as composite
   ML-DSA. It is off by default and needs `CheckBasicAuth`.
@@ -49,6 +51,23 @@ Bouncy Castle and several server and command line defects.
 - **`estclient` and `estserver`.** `-flag=false` works. TPM key paths resolve against the
   configuration file. `estserver` exits when it cannot listen.
 
+## [1.0.7] - 2025-11-19
+### Added
+- `estclient cacerts` writes each CA certificate to its own file with `-separate` and selects
+  root or intermediate certificates with `-roots` and `-intermediates`.
+- The client adds the challenge password attribute when the server requires it. The new
+  `SigningKey` field signs such requests.
+
+### Changed
+- Receivers ignore the `Content-Transfer-Encoding` header, following RFC 8951.
+- Go 1.23 or newer is required. go-tpm is updated to v0.9.6 and golang.org/x/crypto to
+  v0.35.0.
+- The client sends all requests through one HTTP client.
+
+### Fixed
+- Parsing a malformed certificate returns an error instead of panicking.
+- `estclient` help no longer shows a path argument for the `-rootout` switch.
+
 ## [1.0.6] - 2021-02-21
 ### Added
 - Windows build capability.
@@ -78,6 +97,7 @@ Bouncy Castle and several server and command line defects.
 - Initial release
 
 [1.1.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.1.0
+[1.0.7]: https://github.com/globalsign/est/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/globalsign/est/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/globalsign/est/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/globalsign/est/compare/v1.0.3...v1.0.4
