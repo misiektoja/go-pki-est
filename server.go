@@ -88,6 +88,16 @@ type ServerConfig struct {
 	// is sent as is. Any other error answers 400.
 	CheckCSRSignature func(csr *x509.CertificateRequest) error
 
+	// VerifyClientCertificate optionally checks the TLS client certificate of
+	// a /simplereenroll request in place of the built-in check, which verifies
+	// it with crypto/x509 against the certificates CACerts returns. crypto/x509
+	// cannot verify a certificate signed by some post-quantum CAs, such as an
+	// SLH-DSA or composite ML-DSA CA. The Subject and SubjectAltName
+	// comparison with the request runs first. A nil error accepts the
+	// certificate. An error that implements Error is sent as is. Any other
+	// error answers 403.
+	VerifyClientCertificate func(ctx context.Context, r *http.Request, aps string, cert *x509.Certificate) error
+
 	// Refusals optionally receives the requests the server refuses itself,
 	// before or instead of calling the CA.
 	Refusals RefusalRecorder
@@ -125,6 +135,7 @@ const (
 	ctxKeyOmitTransferEncoding
 	ctxKeySRPUsername
 	ctxKeyPasswordRenewal
+	ctxKeyClientCertCheck
 )
 
 // Server constants.
@@ -209,6 +220,13 @@ func csrCheckFromContext(ctx context.Context) func(*x509.CertificateRequest) err
 	return (*x509.CertificateRequest).CheckSignature
 }
 
+// clientCertCheckFromContext returns the configured client certificate check,
+// or nil when the built-in check applies.
+func clientCertCheckFromContext(ctx context.Context) func(context.Context, *http.Request, string, *x509.Certificate) error {
+	check, _ := ctx.Value(ctxKeyClientCertCheck).(func(context.Context, *http.Request, string, *x509.Certificate) error)
+	return check
+}
+
 // refusalsFromContext returns the configured refusal recorder. It returns nil
 // when none is configured.
 func refusalsFromContext(ctx context.Context) RefusalRecorder {
@@ -267,6 +285,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.WithValue(ctxKeyCSRCheck, cfg.CheckCSRSignature))
 	r.Use(middleware.WithValue(ctxKeyOmitTransferEncoding, cfg.OmitTransferEncoding))
 	r.Use(middleware.WithValue(ctxKeyPasswordRenewal, cfg.PasswordRenewal))
+	r.Use(middleware.WithValue(ctxKeyClientCertCheck, cfg.VerifyClientCertificate))
 	r.Use(addServerHeader)
 	r.Use(addSecureHeaders)
 	if len(cfg.AllowedHosts) > 0 {
@@ -479,9 +498,19 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Verify certificate against CA certificates. A CA failure while
-		// fetching them is not a refusal of the client.
-		if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+		// The host's check replaces the one against the CA certificates.
+		if check := clientCertCheckFromContext(ctx); check != nil {
+			if err := check(ctx, r, aps, cert); err != nil {
+				var hostErr Error
+				if !errors.As(err, &hostErr) {
+					err = errInvalidClientCert
+				}
+				refuse(w, r, logMsgVerifyFailed, err)
+				return
+			}
+		} else if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+			// A CA failure while fetching the CA certificates is not a
+			// refusal of the client.
 			if errors.Is(err, errInvalidClientCert) {
 				refuse(w, r, logMsgVerifyFailed, err)
 			} else {
