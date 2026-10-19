@@ -218,6 +218,87 @@ func TestClientClosesConnections(t *testing.T) {
 	}
 }
 
+// TestClientTruncatedErrorBody checks that the client reports the status of an
+// error response whose body ends early, and that CSRAttrs then still treats 404
+// as an empty attribute set.
+func TestClientTruncatedErrorBody(t *testing.T) {
+	t.Parallel()
+
+	csrattrs := func(ctx context.Context, c *est.Client) error {
+		_, err := c.CSRAttrs(ctx)
+		return err
+	}
+	cacerts := func(ctx context.Context, c *est.Client) error {
+		_, err := c.CACerts(ctx)
+		return err
+	}
+
+	var testcases = []struct {
+		name   string
+		status int
+		call   func(context.Context, *est.Client) error
+		want   int
+	}{
+		{
+			name:   "CSRAttrs/NotFound",
+			status: http.StatusNotFound,
+			call:   csrattrs,
+		},
+		{
+			name:   "CSRAttrs/ServiceUnavailable",
+			status: http.StatusServiceUnavailable,
+			call:   csrattrs,
+			want:   http.StatusServiceUnavailable,
+		},
+		{
+			name:   "CACerts/ServiceUnavailable",
+			status: http.StatusServiceUnavailable,
+			call:   cacerts,
+			want:   http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The declared length exceeds the body, so the server closes the
+			// connection and the client cannot read the whole body.
+			s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(typeHeader, mimeTypeText)
+				w.Header().Set("Content-Length", "100")
+				w.Header().Set("Retry-After", "7")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte("short"))
+			}))
+			defer s.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+			defer cancel()
+
+			client := est.Client{Host: strings.TrimPrefix(s.URL, "https://"), InsecureSkipVerify: true}
+			err := tc.call(ctx, &client)
+			if tc.want == 0 {
+				if err != nil {
+					t.Fatalf("got error %v, want none", err)
+				}
+				return
+			}
+
+			var estErr est.Error
+			if !errors.As(err, &estErr) {
+				t.Fatalf("got error %v of type %T, want an est.Error", err, err)
+			}
+			if got := estErr.StatusCode(); got != tc.want {
+				t.Errorf("got status %d, want %d", got, tc.want)
+			}
+			if got := estErr.RetryAfter(); got != 7 {
+				t.Errorf("got Retry-After %d, want 7", got)
+			}
+		})
+	}
+}
+
 // TestEnroll checks enrollment with ECDSA, RSA and ML-DSA keys and the errors the CA returns.
 func TestEnroll(t *testing.T) {
 	t.Parallel()
