@@ -114,7 +114,7 @@ type Client struct {
 
 // Client constants.
 const (
-	estVersion = "v1.1.0"
+	estVersion = "v1.2.0"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
 )
 
