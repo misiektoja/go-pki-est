@@ -46,6 +46,11 @@ const (
 	defaultListenAddr   = ":8443"
 	healthCheckUsername = "healthcheck"
 	healthCheckEndpoint = "/healthcheck"
+
+	// readHeaderTimeout limits how long a client may take to send its request
+	// headers, so a client that never finishes them cannot hold a connection
+	// open indefinitely. It matches the TLS-SRP listener.
+	readHeaderTimeout = srpHandshakeTimeout
 )
 
 // main runs the EST server until it receives a termination signal.
@@ -243,8 +248,9 @@ func main() {
 
 	// Create and start server.
 	s := &http.Server{
-		Handler:   r,
-		TLSConfig: tlsCfg,
+		Handler:           r,
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
 	stop := make(chan os.Signal, 1)
