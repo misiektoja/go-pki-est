@@ -1,0 +1,99 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dupl
+    - errcheck
+    - errorlint
+    - exhaustive
+    - gocritic
+    - goconst
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - modernize
+    - nakedret
+    - noctx
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  settings:
+    # Switches over TPM algorithm identifiers handle the values they do not name in a default branch.
+    exhaustive:
+      default-signifies-exhaustive: true
+    gosec:
+      excludes:
+        # errcheck reports the same unchecked errors and its exclusions below apply.
+        - G104
+    modernize:
+      disable:
+        # interface{} in code inherited from globalsign/est, including exported signatures, is left as it is.
+        - any
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: import-shadowing
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"
+  exclusions:
+    generated: lax
+    rules:
+      # Function declarations and interface method signatures stay on one physical line.
+      - linters:
+          - lll
+        source: '^(func |\t[A-Z]\w*\()'
+      # Test code closes bodies, ignores errors, repeats setup and repeats literals on purpose.
+      - linters:
+          - bodyclose
+          - dupl
+          - errcheck
+          - goconst
+          - gosec
+          - lll
+          - noctx
+        path: _test\.go$
+      # Attributes is the only parsed view of CSR attributes other than extensionRequest, such as
+      # challengePassword.
+      - linters:
+          - staticcheck
+        text: "SA1019: \\(crypto/x509.CertificateRequest\\).Attributes has been deprecated"
+      # The command line tools print errors and never unwrap them.
+      - linters:
+          - errorlint
+        path: ^cmd/
+        text: "non-wrapping format verb for fmt.Errorf"
+      # The command line tools inherited from globalsign/est ignore errors from printing and from
+      # closing files, devices and output redirections.
+      - linters:
+          - errcheck
+        path: ^cmd/
+        text: "Error return value of `(fmt\\.Fprint(f|ln)?|[\\w.]+\\.Close)` is not checked"
+      - linters:
+          - errcheck
+        path: ^cmd/
+        source: '^\s*(defer )?closeFunc\(\)$'
+      # The command line tools read the certificate, key and configuration files their user names.
+      - linters:
+          - gosec
+        path: ^cmd/
+        text: "G304:"
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/misiektoja/go-pki-est
