@@ -98,6 +98,12 @@ type ServerConfig struct {
 	// present.
 	OmitTransferEncoding bool
 
+	// MaxRequestBody bounds the size of a request body in bytes. Larger
+	// requests are refused with 413. If zero, 64 KiB is used. A CSR for a
+	// large post-quantum key can exceed that, such as an SLH-DSA-SHA2-256f
+	// request at about 67 KB in base64. NewRouter refuses a negative value.
+	MaxRequestBody int64
+
 	// TrustProxyHeaders sets the request's RemoteAddr from the X-Real-IP or
 	// X-Forwarded-For header. It defaults to false. Enable it only when every
 	// request passes through a trusted proxy that removes or overwrites both
@@ -123,8 +129,9 @@ const (
 
 // Server constants.
 const (
-	apsParamName   = "additionalPathSegment"
-	defaultTimeout = time.Second * 60
+	apsParamName          = "additionalPathSegment"
+	defaultTimeout        = time.Second * 60
+	defaultMaxRequestBody = 64 << 10
 )
 
 // Log field and message constants.
@@ -231,6 +238,9 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil {
 		return nil, errors.New("PasswordRenewal requires CheckBasicAuth")
 	}
+	if cfg.MaxRequestBody < 0 {
+		return nil, errors.New("MaxRequestBody must not be negative")
+	}
 
 	r := chi.NewRouter()
 
@@ -262,7 +272,11 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	if len(cfg.AllowedHosts) > 0 {
 		r.Use(verifyAllowedHosts(cfg.AllowedHosts))
 	}
-	r.Use(maxBodySize(65536))
+	maxBody := int64(defaultMaxRequestBody)
+	if cfg.MaxRequestBody != 0 {
+		maxBody = cfg.MaxRequestBody
+	}
+	r.Use(maxBodySize(maxBody))
 	if cfg.RateLimit != 0 {
 		r.Use(rateLimit(cfg.RateLimit))
 	}
