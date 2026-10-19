@@ -15,8 +15,8 @@ defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 ## Contents
 
 * [Install](#install)
-* [Scope](#scope)
 * [Quickstart](#quickstart)
+* [Features](#features)
 * [Credits](#credits)
 * [Support and contributing](#support-and-contributing)
 * [License](#license)
@@ -38,67 +38,6 @@ go install github.com/misiektoja/go-pki-est/cmd/estclient@latest
 ```bash
 go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
 ```
-
-## Scope
-
-| Operation | Coverage |
-| --- | --- |
-| `/cacerts` | CA certificate distribution |
-| `/simpleenroll` and `/simplereenroll` | Enrollment and reenrollment with a PKCS#10 request |
-| `/serverkeygen` | Server-generated private keys, returned with or without additional encryption |
-| `/csrattrs` | CSR attributes |
-| `/tpmenroll` | Non-standard enrollment of TPM 2.0 keys with the credential protocol in Part 1, section 24 of the TPM 2.0 Library specification |
-| `/fullcmc` | Not implemented |
-
-Every operation accepts the optional additional path segment. The server can require HTTP Basic
-authentication on top of TLS client certificates. Following RFC 8951, receivers ignore the
-`Content-Transfer-Encoding` header and accept spaces, tabs and line breaks in base64. The server
-still sends the header unless `ServerConfig.OmitTransferEncoding` is set, because some clients
-reject it.
-
-### Embedding the server
-
-`NewRouter` returns an `http.Handler`, so a host application can serve EST next to its own
-endpoints. These `ServerConfig` fields let the host take decisions the library cannot:
-
-* `CheckBasicAuth` runs for every enrollment request, also without an `Authorization` header, so
-  the host can accept a TLS client certificate instead of a password. Returning an `Error` with
-  status 403 or 429 sends that status as is, with its `Retry-After` value. Other errors answer 401.
-* `CheckCSRSignature` replaces the PKCS#10 signature check of enrollment and reenrollment, for
-  algorithms `crypto/x509` cannot verify, such as composite ML-DSA.
-* `Refusals` receives the requests the server refused before asking the CA, such as a wrong
-  content type, a malformed request or a renewal whose subject changed. Use it for audit records
-  or rate limits.
-* `OmitTransferEncoding` leaves the `Content-Transfer-Encoding` header out of responses.
-* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a TLS client certificate.
-  RFC 7030 section 2.3 allows this when the certificate being renewed cannot be used for TLS.
-  `CheckBasicAuth` must accept the username and password. The CA receives a nil certificate and
-  decides which certificate is renewed. It is off by default.
-
-TLS-SRP (RFC 5054) signs a client in with a username and password during the TLS handshake. libest
-clients use it with `--srp`. A host that terminates TLS-SRP passes the username to the router with
-`WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
-`/simplereenroll` then accepts the request without a client certificate and calls `CA.Reenroll`
-with a nil certificate, as libest does. The CA decides which certificate is renewed. `estserver`
-serves the router over TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
-
-`/serverkeygen` returns any PKCS#8 key the CA provides, including algorithms `crypto/x509` cannot
-parse, such as ML-KEM. It does not check the request's signature, because RFC 7030 section 4.4.1
-tells the server to ignore the public key and signature of that request.
-
-### Post-quantum algorithms
-
-**ML-DSA** keys and certificates (FIPS 204, RFC 9881) work for enrollment, renewal and
-`/serverkeygen`, in the library and in `estclient`. They rely on `crypto/x509` and `crypto/tls`.
-The tests use ML-DSA-65. Limits:
-
-* An ML-DSA client certificate needs TLS 1.3, which has no `tls-unique` value. The client then
-  leaves out the challenge password that RFC 7030 section 3.5 builds from it.
-* **Composite ML-DSA** requests are accepted only through `CheckCSRSignature`, because
-  `crypto/x509` cannot verify them. The client cannot create them. No TLS library presents a
-  composite client certificate, so a composite certificate renews with `PasswordRenewal` or over
-  TLS-SRP.
-* **ML-KEM** keys cannot sign a PKCS#10 request, so they can only come from `/serverkeygen`.
 
 ## Quickstart
 
@@ -195,6 +134,57 @@ use that chain to reenroll:
 Note that when we omit the `-csr` option when reenrolling, the EST client
 automatically generates a CSR for us by copying the subject field and subject
 alternative name extension from the certificate we're renewing.
+
+## Features
+
+| Operation | Coverage |
+| --- | --- |
+| `/cacerts` | CA certificate distribution |
+| `/simpleenroll` and `/simplereenroll` | Enrollment and reenrollment with a PKCS#10 request |
+| `/serverkeygen` | Server-generated private keys, returned with or without additional encryption |
+| `/csrattrs` | CSR attributes |
+| `/tpmenroll` | Non-standard enrollment of TPM 2.0 keys with the credential protocol in Part 1, section 24 of the TPM 2.0 Library specification |
+| `/fullcmc` | Not implemented |
+
+Every operation accepts the optional additional path segment. The server can require HTTP Basic
+authentication on top of TLS client certificates. Following RFC 8951, receivers ignore the
+`Content-Transfer-Encoding` header and accept whitespace in base64.
+
+`/serverkeygen` returns any PKCS#8 key the CA provides, including ML-KEM. It ignores the request
+signature, because RFC 7030 section 4.4.1 tells the server to.
+
+### Embedding the server
+
+`NewRouter` returns an `http.Handler` that serves EST next to the host application's own
+endpoints. These [`ServerConfig`](https://pkg.go.dev/github.com/misiektoja/go-pki-est#ServerConfig)
+fields hand decisions to the host:
+
+* `CheckBasicAuth` checks every enrollment request, also one without a password, so the host can
+  accept a client certificate instead. It can answer 401, 403 or 429 with `Retry-After`.
+* `CheckCSRSignature` verifies CSR signatures that `crypto/x509` cannot, such as composite ML-DSA.
+* `Refusals` reports requests refused before they reach the CA, for audit records or rate limits.
+* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
+  RFC 7030 section 2.3 allows. It is off by default.
+* `OmitTransferEncoding` drops the `Content-Transfer-Encoding` header for clients that reject it.
+
+**TLS-SRP** (RFC 5054) signs a client in with a username and password during the TLS handshake,
+as libest does with `--srp`. A host that terminates TLS-SRP passes the username to the router with
+`WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
+`/simplereenroll` then accepts the request without a client certificate. As with
+`PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed.
+`estserver` serves TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
+
+### Post-quantum algorithms
+
+**ML-DSA** (FIPS 204, RFC 9881) works for enrollment, renewal and `/serverkeygen` in the library
+and in `estclient`. The tests use ML-DSA-65. Limits:
+
+* An ML-DSA client certificate needs TLS 1.3, which has no `tls-unique` value. The client then
+  leaves out the proof of possession challenge password.
+* **Composite ML-DSA** requests need `CheckCSRSignature`, and the client cannot create them. No
+  TLS library presents a composite client certificate, so composite certificates renew with
+  `PasswordRenewal` or TLS-SRP.
+* **ML-KEM** keys cannot sign a CSR, so they can only come from `/serverkeygen`.
 
 ## Credits
 
