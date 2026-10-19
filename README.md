@@ -162,6 +162,9 @@ fields hand decisions to the host:
 * `CheckBasicAuth` checks every enrollment request, also one without a password, so the host can
   accept a client certificate instead. It can answer 401, 403 or 429 with `Retry-After`.
 * `CheckCSRSignature` verifies CSR signatures that `crypto/x509` cannot, such as composite ML-DSA.
+* `VerifyClientCertificate` checks the client certificate of a renewal in place of the check
+  against `/cacerts`, for certificates `crypto/x509` cannot verify, such as those an SLH-DSA CA
+  signed. The Subject and SubjectAltName comparison still runs first.
 * `Refusals` reports requests refused before they reach the CA, for audit records or rate limits.
 * `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
   RFC 7030 section 2.3 allows. It is off by default.
