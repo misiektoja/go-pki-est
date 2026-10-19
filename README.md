@@ -190,6 +190,13 @@ and in `estclient`. The tests use ML-DSA-65. Limits:
   TLS library presents a composite client certificate, so composite certificates renew with
   `PasswordRenewal` or TLS-SRP.
 * **ML-KEM** keys cannot sign a CSR, so they can only come from `/serverkeygen`.
+* **SLH-DSA** (FIPS 205, RFC 9909) requests need `CheckCSRSignature`, and the client cannot
+  create them. The SHA2-256f and SHAKE-256f sets also need a larger `MaxRequestBody`. TLS has no
+  standard signature scheme for SLH-DSA keys, so these certificates renew with `PasswordRenewal`
+  or TLS-SRP.
+* A certificate that an **SLH-DSA or composite ML-DSA CA** signed renews over TLS only with
+  `VerifyClientCertificate`, because `crypto/x509` cannot verify it. The listener must then request
+  the client certificate without verifying it, with `tls.RequestClientCert`.
 
 ## Credits
 

@@ -95,7 +95,9 @@ type ServerConfig struct {
 	// SLH-DSA or composite ML-DSA CA. The Subject and SubjectAltName
 	// comparison with the request runs first. A nil error accepts the
 	// certificate. An error that implements Error is sent as is. Any other
-	// error answers 403.
+	// error answers 403. The TLS listener must request the certificate
+	// without verifying it, for example with tls.RequestClientCert, because
+	// crypto/tls would otherwise refuse the handshake first.
 	VerifyClientCertificate func(ctx context.Context, r *http.Request, aps string, cert *x509.Certificate) error
 
 	// Refusals optionally receives the requests the server refuses itself,
