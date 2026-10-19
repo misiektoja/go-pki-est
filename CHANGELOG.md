@@ -6,7 +6,8 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.2.0] - TBD
 
 The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
-client certificate of a renewal itself. The client no longer panics on a truncated error response.
+client certificate of a renewal itself. The server router moves to chi v5. The client no longer
+panics on a truncated error response.
 
 ### Added
 - **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
@@ -17,6 +18,13 @@ client certificate of a renewal itself. The client no longer panics on a truncat
   It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
   ML-DSA CA signed. The TLS listener must then request the certificate without verifying it, for
   example with `tls.RequestClientCert`. Without the hook, renewal behaves as before.
+
+### Changed
+- **chi v5.** The server router uses `github.com/go-chi/chi/v5` v5.5.0 instead of chi v4.1.2.
+  govulncheck flags v4 for an open-redirect advisory that has no v4 fix, although this module
+  never called the affected middleware. A 405 response now lists the supported methods in an
+  `Allow` header. Proxy address headers work as before. `True-Client-IP` is ignored.
+- **`estclient -version` and `estserver -version`** report 1.2.0.
 
 ### Fixed
 - **Truncated error responses.** When the body of an error response ends early, client calls
