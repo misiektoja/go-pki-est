@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-est.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-est)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml)
+[![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml)
 
 Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
 defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:

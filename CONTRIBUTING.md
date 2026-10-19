@@ -15,18 +15,14 @@ Open pull requests against `dev`.
 Run these before submitting a change:
 
 ```bash
-gofmt -l .
+make fmt-check
+make lint
+GLOBALSIGN_EST_SKIP=hsm,tpm make test
 ```
 
-```bash
-go vet ./...
-```
+`make fmt-check` fails when a tracked Go file is not gofmt formatted. `make lint` runs golangci-lint at the version CI uses, installed under `bin/`. `make test` runs `go vet` and the tests under the race detector. `TESTFLAGS=-v` lists the skipped tests. Run `make tidy-check` when `go.mod` changes, `make govulncheck` when a dependency changes and `make actionlint` when a workflow changes. `make help` lists every target.
 
-```bash
-GLOBALSIGN_EST_SKIP=hsm,tpm go test -race ./...
-```
-
-`gofmt -l .` must print nothing. `GLOBALSIGN_EST_SKIP=hsm,tpm` skips the tests that need SoftHSM or a TPM device. CI runs the HSM tests on Linux with SoftHSM. No CI job has a TPM.
+`GLOBALSIGN_EST_SKIP=hsm,tpm` skips the tests that need SoftHSM or a TPM device. CI runs the HSM tests on Linux with SoftHSM. No CI job has a TPM.
 
 Protocol changes need negative tests and an RFC citation. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments, the README and [CHANGELOG.md](CHANGELOG.md).
 
