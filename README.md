@@ -169,6 +169,8 @@ fields hand decisions to the host:
 * `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
   RFC 7030 section 2.3 allows. It is off by default.
 * `OmitTransferEncoding` drops the `Content-Transfer-Encoding` header for clients that reject it.
+* `OmitStrictTransportSecurity` drops the `Strict-Transport-Security` header, so the host can send
+  its own value or none.
 * `MaxRequestBody` raises the 64 KiB request limit for CSRs of large post-quantum keys. An
   SLH-DSA-SHA2-256f CSR is about 67 KB in base64.
 
