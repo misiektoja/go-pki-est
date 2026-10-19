@@ -50,22 +50,26 @@ require-version:
 
 # A go.work above the checkout or the check directory would replace the module's own requirements.
 release-check sbom: export GOWORK = off
+# The export step sets -e itself because make 3.81, the macOS default, ignores .SHELLFLAGS. Its steps
+# are separate commands because -e does not stop at a failure inside an && list.
 .PHONY: release-check
 release-check: ## Build, vet and test an export of HEAD and import it from a separate module. Set VERSION to check the changelog heading.
 	@if grep -q '^replace ' go.mod; then echo "error: go.mod has a replace directive"; exit 1; fi
 	@if [ -n "$(VERSION)" ]; then \
 		version="$(VERSION)"; version="$${version#v}"; \
 		grep -q "^## \[$$version\] - " CHANGELOG.md || { echo "error: CHANGELOG.md has no heading for $$version"; exit 1; }; \
+		if grep -q "^## \[$$version\] - TBD" CHANGELOG.md; then echo "error: CHANGELOG.md still dates $$version TBD"; exit 1; fi; \
 		if grep -qi '^## \[Unreleased' CHANGELOG.md; then echo "error: CHANGELOG.md still has an Unreleased section"; exit 1; fi; \
+		grep -Eq "estVersion += \"$(VERSION)\"" client.go || { echo "error: estVersion in client.go is not $(VERSION)"; exit 1; }; \
 	fi
-	@check="$(RELEASE_CHECK_DIR)"; \
+	@set -e; check="$(RELEASE_CHECK_DIR)"; \
 	if [ -e "$$check" ]; then echo "error: $$check exists, move it aside first"; exit 1; fi; \
 	mkdir -p "$$check/export" "$$check/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$check/export"; \
-	cd "$$check/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
-	cd "$$check/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-est v0.0.0\n\nreplace github.com/misiektoja/go-pki-est => ../export\n' "$(GO_VERSION)" > go.mod; \
+	cd "$$check/export"; go mod verify; go build ./...; go vet ./...; go test -count=1 ./...; \
+	cd "$$check/consumer"; printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-est v0.0.0\n\nreplace github.com/misiektoja/go-pki-est => ../export\n' "$(GO_VERSION)" > go.mod; \
 	printf 'package main\n\nimport (\n\t"log"\n\n\test "github.com/misiektoja/go-pki-est"\n)\n\nfunc main() {\n\t_, err := est.NewRouter(&est.ServerConfig{})\n\tlog.Println(err)\n}\n' > main.go; \
-	go mod tidy && go build ./... && go run .; \
+	go mod tidy; go build ./...; go run .; \
 	echo "release check passed for $$(git -C "$(CURDIR)" rev-parse --short HEAD)"
 
 .PHONY: release-body
