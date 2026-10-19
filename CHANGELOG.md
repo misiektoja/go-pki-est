@@ -5,12 +5,17 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 
 ## [1.2.0] - TBD
 
-The request size limit can be raised for CSRs of large post-quantum keys.
+The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
+client certificate of a renewal itself.
 
 ### Added
 - **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
   The default stays 64 KiB, which refuses CSRs of the largest SLH-DSA keys, such as
   SLH-DSA-SHA2-256f at about 67 KB in base64. `NewRouter` refuses a negative value.
+- **`ServerConfig.VerifyClientCertificate`** checks the TLS client certificate of a
+  `/simplereenroll` request in place of the built-in check against the `/cacerts` certificates.
+  It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
+  ML-DSA CA signed. Without it, renewal behaves as before.
 
 ## [1.1.0] - 2026-10-19
 
