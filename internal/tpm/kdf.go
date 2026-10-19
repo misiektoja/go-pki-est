@@ -61,7 +61,7 @@ func kdfCounter(h func() hash.Hash, key, before, after []byte, l, r uint32) ([]b
 	// Perform PRF iterations.
 	var out = make([]byte, 0, n*hashSize)
 	var cbuf = make([]byte, 4)
-	for c := uint32(1); c <= uint32(n); c++ {
+	for c := uint32(1); c <= n; c++ {
 		binary.BigEndian.PutUint32(cbuf, c)
 
 		var mac = hmac.New(h, key)

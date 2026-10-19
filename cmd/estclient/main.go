@@ -21,6 +21,7 @@ import (
 	"os"
 )
 
+// main runs the estclient command named by the first argument.
 func main() {
 	log.SetPrefix(fmt.Sprintf("%s: ", appName))
 	log.SetFlags(0)
@@ -35,9 +36,10 @@ func main() {
 		usageError(os.Stderr, usageLineLength)
 	}
 
-	// Parse command line options.
+	// Parse command line options. The flag set exits on a parse error, so
+	// Parse returns no error to handle.
 	set := cmd.FlagSet(os.Stdout, usageLineLength)
-	set.Parse(os.Args[2:])
+	_ = set.Parse(os.Args[2:])
 
 	// Execute command.
 	if isFlagPassed(set, helpFlag) {

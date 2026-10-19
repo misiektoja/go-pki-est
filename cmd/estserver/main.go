@@ -36,7 +36,8 @@ import (
 	"time"
 
 	"github.com/globalsign/pemfile"
-	"github.com/misiektoja/go-pki-est"
+
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/basiclogger"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 )
@@ -47,6 +48,9 @@ const (
 	healthCheckEndpoint = "/healthcheck"
 )
 
+// main runs the EST server until it receives a termination signal.
+//
+//nolint:gocyclo,gocritic // Setup runs in order and log.Fatalf ends the process on any failure.
 func main() {
 	log.SetPrefix(fmt.Sprintf("%s: ", appName))
 	log.SetFlags(0)
@@ -101,6 +105,7 @@ func main() {
 	if cfg.Logfile == "" {
 		logger = basiclogger.New(os.Stderr)
 	} else {
+		//nolint:gosec // G302: log files are readable by other users by convention. The umask can restrict this.
 		f, err := os.OpenFile(cfg.Logfile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalf("failed to open log file: %v", err)
@@ -245,7 +250,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP)
 
-	ln, err := net.Listen("tcp", listenAddr)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}

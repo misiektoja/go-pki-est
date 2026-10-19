@@ -22,7 +22,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: RFC 5280 section 4.2.1.2 derives key identifiers with SHA-1.
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -38,7 +38,7 @@ import (
 
 	"github.com/globalsign/pemfile"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/tpm"
 )
 
@@ -504,7 +504,7 @@ func makePublicKeyIdentifier(pub crypto.PublicKey) ([]byte, error) {
 		return nil, err
 	}
 
-	id := sha1.Sum(keyBytes)
+	id := sha1.Sum(keyBytes) //nolint:gosec // G401: an identifier, not a security function, as RFC 5280 describes.
 
 	return id[:], nil
 }

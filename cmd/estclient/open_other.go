@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 /*
 Copyright (c) 2020 GMO GlobalSign, Inc.

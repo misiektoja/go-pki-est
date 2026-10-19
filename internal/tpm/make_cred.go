@@ -23,7 +23,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: TPM 2.0 public areas may name SHA-1 as their name algorithm.
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/binary"
@@ -314,6 +314,7 @@ func encryptCredential(pub tpm2.Public, h func() hash.Hash, cred, seed, name []b
 	// credential uses the symmetric algorithm specified by the EK in CFB
 	// mode with a zero IV.
 	enc := make([]byte, len(plain))
+	//nolint:gosec,staticcheck // G407, SA1019: the TPM specification fixes CFB with a zero IV and a key used once.
 	cipher.NewCFBEncrypter(cphr, make([]byte, cphr.BlockSize())).XORKeyStream(enc, plain)
 
 	return enc, nil
@@ -332,6 +333,7 @@ func decryptCredential(encIdentity []byte, ekPub tpm2.Public, h func() hash.Hash
 	// uses the symmetric algorithm specified by the EK in CFB mode with a
 	// zero IV.
 	dec := make([]byte, len(encIdentity))
+	//nolint:gosec,staticcheck // G407, SA1019: the TPM specification fixes CFB with a zero IV and a key used once.
 	cipher.NewCFBDecrypter(cphr, make([]byte, cphr.BlockSize())).XORKeyStream(dec, encIdentity)
 
 	// Verify leading 2-octet size field, then strip it from the returned
@@ -396,9 +398,10 @@ func nameAlgHashFromPublic(pub tpm2.Public) (func() hash.Hash, error) {
 
 	case tpm2.AlgSHA512:
 		return sha512.New, nil
-	}
 
-	return nil, fmt.Errorf("unsupported hash algorithm: %d", pub.NameAlg)
+	default:
+		return nil, fmt.Errorf("unsupported hash algorithm: %d", pub.NameAlg)
+	}
 }
 
 // computeName computes and encodes the name of a public area, without the

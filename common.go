@@ -18,7 +18,7 @@ package est
 import (
 	"encoding/asn1"
 	"io"
-	"io/ioutil"
+	"net/http"
 )
 
 // URI constants.
@@ -73,9 +73,9 @@ var (
 	oidExtensionRequest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 14}
 )
 
-// consumeAndClose discards any remaining data in the io.ReadCloser and then
-// closes it.
-func consumeAndClose(rc io.ReadCloser) {
-	io.Copy(ioutil.Discard, rc)
-	rc.Close()
+// consumeAndClose discards any remaining data in the response body and then
+// closes it. Both errors are ignored because the caller has its result.
+func consumeAndClose(resp *http.Response) {
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }

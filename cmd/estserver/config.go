@@ -18,7 +18,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 // config contains the EST server configuration.
@@ -58,7 +58,7 @@ type tlsSRPConfig struct {
 // configFromFile returns a new EST server configuration from a JSON-encoded
 // configuration file.
 func configFromFile(filename string) (*config, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

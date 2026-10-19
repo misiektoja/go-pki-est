@@ -144,22 +144,6 @@ var (
 		"file.",
 		keyFlag, keyFlag)
 
-	usagePEMPara = fmt.Sprintf("The files referred to by -%s, -%s and -%s "+
-		"should contain one or more PEM-encoded certificates. If more than "+
-		"one certificate is present (for example, because an intermediate CA "+
-		"certificate must be included in the chain presented to the EST "+
-		"server) then the certificates should appear in order, with the "+
-		"end-entity certificate first, and the root CA certificate (if "+
-		"present) last.",
-		certsFlag, explicitAnchorFlag, implicitAnchorFlag)
-
-	usagePrivateKeyPara = fmt.Sprintf("The file referred to by -%s should "+
-		"contain a PEM-encoded private key. If the file contains an encrypted "+
-		"PEM block, you will be prompted for a passphrase at the console. "+
-		"Hardware-resident private keys can only be specified in the "+
-		"configuration file.",
-		keyFlag)
-
 	usageHeadersPara = fmt.Sprintf("Custom additional HTTP headers can be "+
 		"included in the request to the EST server by specifying them with "+
 		"the -%s option. If multiple headers are sent, they must be "+
@@ -207,7 +191,7 @@ func outputPara(w io.Writer, line, indent int, s string) {
 		fmt.Fprint(w, strings.Repeat(" ", indent))
 	}
 
-	for _, word := range strings.Fields(s) {
+	for word := range strings.FieldsSeq(s) {
 		wordLen := len(word)
 		spaceLen := 0
 		if lineLen != indent {

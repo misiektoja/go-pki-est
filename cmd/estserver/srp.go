@@ -30,8 +30,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/misiektoja/go-pki-est"
 	srptls "github.com/misiektoja/go-tls-srp"
+
+	est "github.com/misiektoja/go-pki-est"
 )
 
 // srpHandshakeTimeout limits how long a client may take to send its request

@@ -313,7 +313,7 @@ func init() {
 
 // Names returns a sorted list of command names.
 func (set commandSet) Names() []string {
-	var names []string
+	names := make([]string, 0, len(set))
 	for name := range set {
 		names = append(names, name)
 	}
@@ -323,7 +323,7 @@ func (set commandSet) Names() []string {
 }
 
 // Usage outputs usage information for a command.
-func (cmd command) Usage(w io.Writer, line int) error {
+func (cmd command) Usage(w io.Writer, line int) {
 	outputPara(w, line, 0, fmt.Sprintf("usage: %s %s [options]", appName, cmd.name))
 
 	if cmd.longDesc != "" {
@@ -339,8 +339,6 @@ func (cmd command) Usage(w io.Writer, line int) error {
 	for _, extra := range cmd.usageExtras {
 		extra(w, line)
 	}
-
-	return nil
 }
 
 // FlagSet returns a flag set for the command, ready for parsing.
@@ -355,24 +353,24 @@ func (cmd command) FlagSet(w io.Writer, line int) *flag.FlagSet {
 		flags = append(flags, extras...)
 	}
 
-	for _, flag := range flags {
-		def, ok := optDefs[flag]
+	for _, name := range flags {
+		def, ok := optDefs[name]
 		if !ok {
-			panic(fmt.Sprintf("flag not defined: %s", flag))
+			panic(fmt.Sprintf("flag not defined: %s", name))
 		}
 
 		switch d := def.defaultValue.(type) {
 		case bool:
-			set.Bool(flag, d, "")
+			set.Bool(name, d, "")
 
 		case string:
-			set.String(flag, d, "")
+			set.String(name, d, "")
 
 		case time.Duration:
-			set.Duration(flag, d, "")
+			set.Duration(name, d, "")
 
 		default:
-			panic(fmt.Sprintf("flag with no default: %s", flag))
+			panic(fmt.Sprintf("flag with no default: %s", name))
 		}
 	}
 

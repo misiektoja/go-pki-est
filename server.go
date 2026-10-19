@@ -503,8 +503,7 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 		// The host's check replaces the one against the CA certificates.
 		if check := clientCertCheckFromContext(ctx); check != nil {
 			if err := check(ctx, r, aps, cert); err != nil {
-				var hostErr Error
-				if !errors.As(err, &hostErr) {
+				if _, ok := errors.AsType[Error](err); !ok {
 					err = errInvalidClientCert
 				}
 				refuse(w, r, logMsgVerifyFailed, err)
@@ -599,7 +598,7 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 	var ekPub []byte
 	var akPub []byte
 
-	_, err := decodeMultipartRequest(
+	err := decodeMultipartRequest(
 		r,
 		[]multipartPart{
 			{contentType: mimeTypePKCS10, data: &csr},
@@ -666,8 +665,7 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		return false
 	}
 
-	var estErr Error
-	if errors.As(err, &estErr) {
+	if estErr, ok := errors.AsType[Error](err); ok {
 		if estErr.StatusCode() == http.StatusInternalServerError {
 			LoggerFromContext(ctx).Errorw(msg, logFieldError, err.Error())
 		}
@@ -678,7 +676,8 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		}
 
 		w.WriteHeader(estErr.StatusCode())
-		w.Write([]byte(fmt.Sprintf("%d %s\n", estErr.StatusCode(), estErr.Error())))
+		//nolint:gosec // G705: the body is text/plain and addSecureHeaders sets nosniff.
+		_, _ = w.Write([]byte(fmt.Sprintf("%d %s\n", estErr.StatusCode(), estErr.Error())))
 	} else {
 		LoggerFromContext(ctx).Errorw(msg, logFieldError, err.Error())
 		errInternal.Write(w)
