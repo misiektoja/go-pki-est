@@ -51,7 +51,7 @@ const (
 	defaultTimeout = time.Second * 15
 	noneLabel      = "none"
 	sepChar        = ","
-	versionString  = "1.1.0"
+	versionString  = "1.2.0"
 )
 
 // Flag name constants.
