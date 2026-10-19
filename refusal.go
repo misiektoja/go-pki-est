@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 )
 
 // Refusal describes a request the server refused without asking the CA.

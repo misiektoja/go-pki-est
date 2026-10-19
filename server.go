@@ -30,8 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"go.mozilla.org/pkcs7"
 	"golang.org/x/time/rate"
 )
@@ -279,7 +279,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.Timeout(timeout))
 	r.Use(middleware.RequestID)
 	if cfg.TrustProxyHeaders {
-		r.Use(middleware.RealIP)
+		r.Use(trustProxyAddress)
 	}
 	r.Use(withLogger(logger))
 	r.Use(recoverer(logger))
@@ -806,6 +806,22 @@ func addSecureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(strictTransportHeader, "max-age=31536000")
 		w.Header().Set(contentTypeOptionsHeader, "nosniff")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// trustProxyAddress is middleware which sets the request's RemoteAddr from the
+// X-Real-IP header or else from the first address in the X-Forwarded-For
+// header. The values are used as they are, without address validation. chi's
+// RealIP middleware also trusts True-Client-IP, which a proxy that overwrites
+// only the two documented headers would pass through from the client.
+func trustProxyAddress(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if addr := r.Header.Get(realIPHeader); addr != "" {
+			r.RemoteAddr = addr
+		} else if list := r.Header.Get(forwardedForHeader); list != "" {
+			r.RemoteAddr, _, _ = strings.Cut(list, ", ")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
