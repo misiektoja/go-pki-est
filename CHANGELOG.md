@@ -15,7 +15,8 @@ client certificate of a renewal itself.
 - **`ServerConfig.VerifyClientCertificate`** checks the TLS client certificate of a
   `/simplereenroll` request in place of the built-in check against the `/cacerts` certificates.
   It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
-  ML-DSA CA signed. Without it, renewal behaves as before.
+  ML-DSA CA signed. The TLS listener must then request the certificate without verifying it, for
+  example with `tls.RequestClientCert`. Without the hook, renewal behaves as before.
 
 ## [1.1.0] - 2026-10-19
 
