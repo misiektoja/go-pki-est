@@ -42,7 +42,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 
 	"github.com/globalsign/pemfile"
@@ -58,9 +58,10 @@ var (
 	skipTPM = false
 )
 
+// init reads GLOBALSIGN_EST_SKIP to skip the HSM and TPM tests.
 func init() {
 	if val, ok := os.LookupEnv(skipVar); ok {
-		for _, ts := range strings.Split(val, ",") {
+		for ts := range strings.SplitSeq(val, ",") {
 			switch strings.ToLower(ts) {
 			case "hsm":
 				skipHSM = true
@@ -71,6 +72,7 @@ func init() {
 	}
 }
 
+// TestNewConfig checks that a configuration file and command line options combine as expected.
 func TestNewConfig(t *testing.T) {
 	t.Parallel()
 
@@ -147,8 +149,6 @@ func TestNewConfig(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -190,6 +190,7 @@ func TestNewConfig(t *testing.T) {
 	}
 }
 
+// TestNewConfigHardware checks that configuration files with HSM and TPM private keys load.
 func TestNewConfigHardware(t *testing.T) {
 	t.Parallel()
 
@@ -216,8 +217,6 @@ func TestNewConfigHardware(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -282,6 +281,7 @@ func TestHSMKeyNoKeyID(t *testing.T) {
 	}
 }
 
+// TestCACerts checks the cacerts command with each trust anchor option, the output filters and a server error.
 func TestCACerts(t *testing.T) {
 	t.Parallel()
 
@@ -352,8 +352,6 @@ func TestCACerts(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer([]byte{})
 			err := cacerts(buf, makeCmdFlagSet(t, cacertsCmd, tc.args))
@@ -367,6 +365,7 @@ func TestCACerts(t *testing.T) {
 	}
 }
 
+// TestCSRAttrs checks the csrattrs command with each trust anchor option and a server error.
 func TestCSRAttrs(t *testing.T) {
 	t.Parallel()
 
@@ -433,8 +432,6 @@ func TestCSRAttrs(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer([]byte{})
 			err := csrattrs(buf, makeCmdFlagSet(t, csrattrsCmd, tc.args))
@@ -451,6 +448,7 @@ func TestCSRAttrs(t *testing.T) {
 	}
 }
 
+// TestEnroll checks the enroll command with a CSR file, a key file, neither and a wrong password.
 func TestEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -511,8 +509,6 @@ func TestEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer([]byte{})
 			err := enroll(buf, makeCmdFlagSet(t, enrollCmd, tc.args))
@@ -527,6 +523,7 @@ func TestEnroll(t *testing.T) {
 	}
 }
 
+// TestReenroll checks that the reenroll command renews certificates the enroll command obtained.
 func TestReenroll(t *testing.T) {
 	t.Parallel()
 
@@ -589,8 +586,6 @@ func TestReenroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			f, err := os.CreateTemp("", "reenroll_test_")
 			if err != nil {
@@ -611,7 +606,7 @@ func TestReenroll(t *testing.T) {
 			}
 
 			blocks := verifyIsPEMBlocks(t, buf.Bytes(), 2)
-			cacerts := make([]*x509.Certificate, 0)
+			cacerts := make([]*x509.Certificate, 0, len(blocks))
 			for _, block := range blocks {
 				cert, err := x509.ParseCertificate(block.Bytes)
 				if err != nil {
@@ -650,6 +645,7 @@ func TestReenroll(t *testing.T) {
 	}
 }
 
+// TestServerKeyGen checks that the serverkeygen command writes the certificate and a PKCS #8 or PKCS #7 key.
 func TestServerKeyGen(t *testing.T) {
 	t.Parallel()
 
@@ -687,8 +683,6 @@ func TestServerKeyGen(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer([]byte{})
 			if err := serverkeygen(buf, makeCmdFlagSet(t, serverkeygenCmd, tc.args)); err != nil {
@@ -737,6 +731,7 @@ func TestServerKeyGenWriteError(t *testing.T) {
 	}
 }
 
+// TestCSR checks that the csr command fills every subject field type and signs with an HSM key or a -key file.
 func TestCSR(t *testing.T) {
 	t.Parallel()
 
@@ -800,8 +795,6 @@ func TestCSR(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -839,6 +832,7 @@ func TestCSR(t *testing.T) {
 	}
 }
 
+// TestSampleConfig checks that the sampleconfig command writes the sample for each key type.
 func TestSampleConfig(t *testing.T) {
 	t.Parallel()
 
@@ -877,8 +871,6 @@ func TestSampleConfig(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

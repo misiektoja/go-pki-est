@@ -33,10 +33,11 @@ import (
 	"time"
 
 	"github.com/google/go-tpm/legacy/tpm2"
-	"github.com/misiektoja/go-pki-est"
+	"go.mozilla.org/pkcs7"
+
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 	"github.com/misiektoja/go-pki-est/internal/tpm"
-	"go.mozilla.org/pkcs7"
 )
 
 const (
@@ -44,6 +45,7 @@ const (
 	serverKeyGenPassword = "pseudohistorical"
 )
 
+// TestCACerts checks that the mock CA returns its certificates and the triggered error.
 func TestCACerts(t *testing.T) {
 	t.Parallel()
 
@@ -68,8 +70,6 @@ func TestCACerts(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -114,6 +114,7 @@ func TestCACerts(t *testing.T) {
 	}
 }
 
+// TestCSRAttrs checks the CSR attributes of the mock CA for each additional path segment.
 func TestCSRAttrs(t *testing.T) {
 	t.Parallel()
 
@@ -157,8 +158,6 @@ func TestCSRAttrs(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -177,6 +176,7 @@ func TestCSRAttrs(t *testing.T) {
 	}
 }
 
+// TestEnrollReenroll checks enrollment and renewal against the mock CA.
 func TestEnrollReenroll(t *testing.T) {
 	t.Parallel()
 
@@ -212,8 +212,6 @@ func TestEnrollReenroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -298,6 +296,7 @@ func TestEnrollReenroll(t *testing.T) {
 	}
 }
 
+// TestServerKeyGen checks server key generation by the mock CA.
 func TestServerKeyGen(t *testing.T) {
 	t.Parallel()
 
@@ -335,8 +334,6 @@ func TestServerKeyGen(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -448,6 +445,7 @@ func TestServerKeyGen(t *testing.T) {
 	}
 }
 
+// TestTPMEnroll checks that a TPM enrollment with the mock CA returns a credential that decrypts the certificate.
 func TestTPMEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -468,8 +466,6 @@ func TestTPMEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 

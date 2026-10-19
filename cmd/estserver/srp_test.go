@@ -27,8 +27,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/misiektoja/go-pki-est"
 	srptls "github.com/misiektoja/go-tls-srp"
+
+	est "github.com/misiektoja/go-pki-est"
 )
 
 // encodeSRPBase64 encodes b as OpenSSL's t_tob64 does. It pads b on the left

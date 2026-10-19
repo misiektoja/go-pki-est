@@ -31,7 +31,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,7 +47,7 @@ import (
 	"github.com/smallstep/scep/x509util"
 	"go.mozilla.org/pkcs7"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/basiclogger"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 	"github.com/misiektoja/go-pki-est/internal/tpm"
@@ -91,6 +91,7 @@ func init() {
 	}
 }
 
+// TestCSRAttrs checks that Client.CSRAttrs returns empty and full attribute sets from the server.
 func TestCSRAttrs(t *testing.T) {
 	t.Parallel()
 
@@ -125,8 +126,6 @@ func TestCSRAttrs(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -184,38 +183,42 @@ func TestClientContextDeadline(t *testing.T) {
 	}
 }
 
+// TestClientClosesConnections checks that the client closes its connection after a failed request.
 func TestClientClosesConnections(t *testing.T) {
 	t.Parallel()
 
-	var open int64
+	var open atomic.Int64
 	s := httptest.NewUnstartedServer(http.NotFoundHandler())
 	s.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		switch state {
 		case http.StateNew:
-			atomic.AddInt64(&open, 1)
+			open.Add(1)
 		case http.StateClosed:
-			atomic.AddInt64(&open, -1)
+			open.Add(-1)
+		default:
+			// The other states belong to connections that are still open.
 		}
 	}
 	s.StartTLS()
 	defer s.Close()
 
 	client := est.Client{Host: strings.TrimPrefix(s.URL, "https://"), InsecureSkipVerify: true}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := client.CACerts(context.Background()); err == nil {
 			t.Fatal("CACerts unexpectedly succeeded")
 		}
 	}
 
 	deadline := time.Now().Add(testTimeout)
-	for atomic.LoadInt64(&open) != 0 {
+	for open.Load() != 0 {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d connections still open", atomic.LoadInt64(&open))
+			t.Fatalf("%d connections still open", open.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
+// TestEnroll checks enrollment with ECDSA, RSA and ML-DSA keys and the errors the CA returns.
 func TestEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -274,8 +277,6 @@ func TestEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -406,8 +407,6 @@ func TestEnrollChallengePassword(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -419,7 +418,7 @@ func TestEnrollChallengePassword(t *testing.T) {
 
 			// tls-unique is only available up to TLS 1.2.
 			s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				body, _ := ioutil.ReadAll(r.Body)
+				body, _ := io.ReadAll(r.Body)
 				der, _ := base64.StdEncoding.DecodeString(string(body))
 				csr, _ := x509.ParseCertificateRequest(der)
 				ch <- received{csr: csr, tlsUnique: r.TLS.TLSUnique}
@@ -498,6 +497,7 @@ func TestEnrollChallengePassword(t *testing.T) {
 	}
 }
 
+// TestReenroll checks renewal with ECDSA, RSA and ML-DSA keys and refusals for changed names and bad certificates.
 func TestReenroll(t *testing.T) {
 	t.Parallel()
 
@@ -604,8 +604,6 @@ func TestReenroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			// Create test EST server and client.
 
@@ -708,6 +706,7 @@ func TestReenrollWithoutTLS(t *testing.T) {
 	}
 }
 
+// TestServerKeyGen checks server key generation with PKCS #8 and PKCS #7 key responses.
 func TestServerKeyGen(t *testing.T) {
 	t.Parallel()
 
@@ -737,8 +736,6 @@ func TestServerKeyGen(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -830,6 +827,7 @@ func TestServerKeyGen(t *testing.T) {
 	}
 }
 
+// TestTPMEnroll checks that a TPM enrollment returns a credential that decrypts the certificate.
 func TestTPMEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -845,8 +843,6 @@ func TestTPMEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -952,8 +948,6 @@ func TestTrustProxyHeaders(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -1201,7 +1195,7 @@ func TestServerErrors(t *testing.T) {
 		var tc = tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := http.NewRequest(tc.method, s.URL+tc.path, ioutil.NopCloser(bytes.NewBuffer(tc.body)))
+			r, err := http.NewRequest(tc.method, s.URL+tc.path, io.NopCloser(bytes.NewBuffer(tc.body)))
 			if err != nil {
 				t.Fatalf("failed to create new HTTP request: %v", err)
 			}
@@ -1225,7 +1219,7 @@ func TestServerErrors(t *testing.T) {
 				t.Fatalf("got status code %d, want %d", resp.StatusCode, tc.status)
 			}
 
-			data, err := ioutil.ReadAll(resp.Body)
+			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				t.Fatalf("failed to read HTTP response body: %s", err)
 			}
@@ -1237,6 +1231,7 @@ func TestServerErrors(t *testing.T) {
 	}
 }
 
+// TestAllowedHosts checks that AllowedHosts accepts IPv6 hosts with or without brackets and a port and refuses others.
 func TestAllowedHosts(t *testing.T) {
 	t.Parallel()
 
@@ -1273,8 +1268,6 @@ func TestAllowedHosts(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

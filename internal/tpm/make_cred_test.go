@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm/legacy/tpm2"
+
 	"github.com/misiektoja/go-pki-est/internal/tpm"
 )
 
@@ -147,6 +148,7 @@ func mustGenerateRSAKey(t *testing.T) interface{} {
 	return key
 }
 
+// storagePublicAreaFromKey builds the encoded TPM storage key public area of an RSA or ECDSA key.
 func storagePublicAreaFromKey(t *testing.T, key interface{}, keyBits uint16) []byte {
 	t.Helper()
 
@@ -178,6 +180,7 @@ func storagePublicAreaFromKey(t *testing.T, key interface{}, keyBits uint16) []b
 				Mode:    tpm2.AlgCFB,
 			},
 			CurveID: tpm2.CurveNISTP256,
+			//nolint:staticcheck // SA1019: tpm2.ECPoint takes the coordinates as big-endian integers.
 			Point: tpm2.ECPoint{
 				XRaw: k.PublicKey.X.Bytes(),
 				YRaw: k.PublicKey.Y.Bytes(),

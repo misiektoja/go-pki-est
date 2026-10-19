@@ -22,13 +22,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 )
 
+// TestCSRAttrsMarshal checks the DER encoding of CSR attributes, including the RFC 7030 example.
 func TestCSRAttrsMarshal(t *testing.T) {
 	t.Parallel()
-
-	type oidSET []asn1.ObjectIdentifier
 
 	var testcases = []struct {
 		name  string
@@ -114,10 +113,9 @@ func TestCSRAttrsMarshal(t *testing.T) {
 	}
 }
 
+// TestCSRAttrsUnmarshal checks the decoding of CSR attributes, including the RFC 7030 example.
 func TestCSRAttrsUnmarshal(t *testing.T) {
 	t.Parallel()
-
-	type oidSET []asn1.ObjectIdentifier
 
 	var testcases = []struct {
 		name string

@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 )
 
 // checkTestPassword accepts the password xyzzy and, like a hook that also signs clients in by
@@ -72,8 +72,6 @@ func TestPasswordRenewal(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -205,8 +203,6 @@ func TestVerifyClientCertificate(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
