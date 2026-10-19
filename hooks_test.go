@@ -509,6 +509,32 @@ func TestOmitTransferEncoding(t *testing.T) {
 	}
 }
 
+// TestOmitStrictTransportSecurity checks that the Strict-Transport-Security header is sent by
+// default and left out when omitted, while the other secure headers stay.
+func TestOmitStrictTransportSecurity(t *testing.T) {
+	t.Parallel()
+
+	for _, omit := range []bool{false, true} {
+		want := "max-age=31536000"
+		if omit {
+			want = ""
+		}
+
+		h := newHookRouter(t, est.ServerConfig{OmitStrictTransportSecurity: omit})
+
+		w := serve(h, http.MethodGet, cacertsEndpoint, "", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("omit %t: got cacerts status %d", omit, w.Code)
+		}
+		if got := w.Header().Get("Strict-Transport-Security"); got != want {
+			t.Errorf("omit %t: got Strict-Transport-Security %q, want %q", omit, got, want)
+		}
+		if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("omit %t: got X-Content-Type-Options %q, want nosniff", omit, got)
+		}
+	}
+}
+
 // TestBase64Whitespace checks that requests with spaces, tabs and line breaks in base64 are accepted.
 func TestBase64Whitespace(t *testing.T) {
 	t.Parallel()
