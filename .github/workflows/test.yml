@@ -1,0 +1,103 @@
+name: Tests
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    permissions:
+      contents: read
+    name: Linux build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The toolchain follows go.mod rather than the newest stable release, so a Go release cannot
+      # change what CI runs without a commit.
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # go mod tidy rewrites tracked files, so running it without this check would let CI repair a
+      # stale go.mod and report success on a tree that no longer matches the commit.
+      - name: Verify the module files are tidy
+        run: make tidy-check
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Install SoftHSM
+        run: sudo apt-get -y install softhsm2
+
+      - name: Setup SoftHSM
+        run: ./.github/scripts/setup-softhsm.sh
+        shell: bash
+
+      # make test runs go vet first. The race detector matters because the server shares the CA
+      # certificate cache and the rate limiter between concurrent requests.
+      - name: Run the tests
+        run: make test TESTFLAGS=-v
+        env:
+          GLOBALSIGN_EST_SKIP: tpm
+
+  build-macos:
+    permissions:
+      contents: read
+    name: macOS build and tests
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run the tests
+        run: make test TESTFLAGS=-v
+        env:
+          GLOBALSIGN_EST_SKIP: hsm,tpm
+
+  build-windows:
+    permissions:
+      contents: read
+    name: Windows build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -v ./...
