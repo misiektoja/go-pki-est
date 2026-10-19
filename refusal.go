@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 )
 
 // Refusal describes a request the server refused without asking the CA.
@@ -62,7 +62,8 @@ func refuse(w http.ResponseWriter, r *http.Request, msg string, err error) {
 	ctx := r.Context()
 
 	var estErr Error
-	if rec := refusalsFromContext(ctx); rec != nil && errors.As(err, &estErr) && estErr.StatusCode() < http.StatusInternalServerError {
+	if rec := refusalsFromContext(ctx); rec != nil && errors.As(err, &estErr) &&
+		estErr.StatusCode() < http.StatusInternalServerError {
 		refusal := Refusal{
 			Operation:             path.Base(r.URL.Path),
 			AdditionalPathSegment: chi.URLParam(r, apsParamName),

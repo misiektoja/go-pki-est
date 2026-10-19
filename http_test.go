@@ -57,7 +57,7 @@ func TestDecodeMultipartRequestTransferEncoding(t *testing.T) {
 			r.Header.Set(contentTypeHeader, "multipart/mixed; boundary=parts")
 
 			var csr *x509.CertificateRequest
-			_, err := decodeMultipartRequest(r, []multipartPart{{contentType: mimeTypePKCS10, data: &csr}})
+			err := decodeMultipartRequest(r, []multipartPart{{contentType: mimeTypePKCS10, data: &csr}})
 			if err != nil {
 				t.Fatalf("failed to decode multipart request: %v", err)
 			}
@@ -68,6 +68,7 @@ func TestDecodeMultipartRequestTransferEncoding(t *testing.T) {
 	}
 }
 
+// TestVerifyResponseType checks the Content-Type check on client responses.
 func TestVerifyResponseType(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +76,6 @@ func TestVerifyResponseType(t *testing.T) {
 		name string
 		r    *http.Response
 		t    string
-		e    string
 		err  error
 	}{
 		{
@@ -87,7 +87,6 @@ func TestVerifyResponseType(t *testing.T) {
 				},
 			},
 			t: "application/pkcs7",
-			e: "bASe64",
 		},
 		{
 			name: "WrongType",
@@ -98,7 +97,6 @@ func TestVerifyResponseType(t *testing.T) {
 				},
 			},
 			t:   "application/pkcs10",
-			e:   "base64",
 			err: errors.New("unexpected Content-Type: application/pkcs7"),
 		},
 		{
@@ -109,7 +107,6 @@ func TestVerifyResponseType(t *testing.T) {
 				},
 			},
 			t:   "application/pkcs7",
-			e:   "base64",
 			err: errors.New("missing or malformed Content-Type header: mime: no media type"),
 		},
 		{
@@ -121,7 +118,6 @@ func TestVerifyResponseType(t *testing.T) {
 				},
 			},
 			t:   "application/pkcs7",
-			e:   "base64",
 			err: errors.New("missing or malformed Content-Type header: mime: invalid media parameter"),
 		},
 	}
@@ -132,7 +128,7 @@ func TestVerifyResponseType(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := verifyResponseType(tc.r, tc.t, tc.e)
+			err := verifyResponseType(tc.r, tc.t)
 			if (err == nil) != (tc.err == nil) {
 				t.Fatalf("got error %v, want %v", err, tc.err)
 			}

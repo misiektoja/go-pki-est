@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 )
 
 // Logger is a basic logger implementing est.Logger.
@@ -132,7 +132,8 @@ func (l *Logger) logw(level string, msg string, keysAndValues ...interface{}) {
 
 	builder.WriteString("\n")
 
-	l.writer.Write([]byte(builder.String()))
+	// A logger has nowhere to report its own write failure.
+	_, _ = l.writer.Write([]byte(builder.String()))
 }
 
 // stringifyFields formats a logger's context fields, plus any extra key-value

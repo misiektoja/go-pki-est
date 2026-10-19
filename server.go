@@ -30,8 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"go.mozilla.org/pkcs7"
 	"golang.org/x/time/rate"
 )
@@ -88,6 +88,18 @@ type ServerConfig struct {
 	// is sent as is. Any other error answers 400.
 	CheckCSRSignature func(csr *x509.CertificateRequest) error
 
+	// VerifyClientCertificate optionally checks the TLS client certificate of
+	// a /simplereenroll request in place of the built-in check, which verifies
+	// it with crypto/x509 against the certificates CACerts returns. crypto/x509
+	// cannot verify a certificate signed by some post-quantum CAs, such as an
+	// SLH-DSA or composite ML-DSA CA. The Subject and SubjectAltName
+	// comparison with the request runs first. A nil error accepts the
+	// certificate. An error that implements Error is sent as is. Any other
+	// error answers 403. The TLS listener must request the certificate
+	// without verifying it, for example with tls.RequestClientCert, because
+	// crypto/tls would otherwise refuse the handshake first.
+	VerifyClientCertificate func(ctx context.Context, r *http.Request, aps string, cert *x509.Certificate) error
+
 	// Refusals optionally receives the requests the server refuses itself,
 	// before or instead of calling the CA.
 	Refusals RefusalRecorder
@@ -97,6 +109,18 @@ type ServerConfig struct {
 	// tells receivers to ignore the header. Some clients fail when it is
 	// present.
 	OmitTransferEncoding bool
+
+	// OmitStrictTransportSecurity leaves the Strict-Transport-Security header
+	// out of responses, so the host can send its own value or none. A browser
+	// that has stored the header refuses certificate warnings for the host
+	// name on every port. It defaults to false, which sends max-age=31536000.
+	OmitStrictTransportSecurity bool
+
+	// MaxRequestBody bounds the size of a request body in bytes. Larger
+	// requests are refused with 413. If zero, 64 KiB is used. A CSR for a
+	// large post-quantum key can exceed that, such as an SLH-DSA-SHA2-256f
+	// request at about 67 KB in base64. NewRouter refuses a negative value.
+	MaxRequestBody int64
 
 	// TrustProxyHeaders sets the request's RemoteAddr from the X-Real-IP or
 	// X-Forwarded-For header. It defaults to false. Enable it only when every
@@ -119,12 +143,14 @@ const (
 	ctxKeyOmitTransferEncoding
 	ctxKeySRPUsername
 	ctxKeyPasswordRenewal
+	ctxKeyClientCertCheck
 )
 
 // Server constants.
 const (
-	apsParamName   = "additionalPathSegment"
-	defaultTimeout = time.Second * 60
+	apsParamName          = "additionalPathSegment"
+	defaultTimeout        = time.Second * 60
+	defaultMaxRequestBody = 64 << 10
 )
 
 // Log field and message constants.
@@ -202,6 +228,13 @@ func csrCheckFromContext(ctx context.Context) func(*x509.CertificateRequest) err
 	return (*x509.CertificateRequest).CheckSignature
 }
 
+// clientCertCheckFromContext returns the configured client certificate check,
+// or nil when the built-in check applies.
+func clientCertCheckFromContext(ctx context.Context) func(context.Context, *http.Request, string, *x509.Certificate) error {
+	check, _ := ctx.Value(ctxKeyClientCertCheck).(func(context.Context, *http.Request, string, *x509.Certificate) error)
+	return check
+}
+
 // refusalsFromContext returns the configured refusal recorder. It returns nil
 // when none is configured.
 func refusalsFromContext(ctx context.Context) RefusalRecorder {
@@ -231,6 +264,9 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil {
 		return nil, errors.New("PasswordRenewal requires CheckBasicAuth")
 	}
+	if cfg.MaxRequestBody < 0 {
+		return nil, errors.New("MaxRequestBody must not be negative")
+	}
 
 	r := chi.NewRouter()
 
@@ -249,7 +285,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.Timeout(timeout))
 	r.Use(middleware.RequestID)
 	if cfg.TrustProxyHeaders {
-		r.Use(middleware.RealIP)
+		r.Use(trustProxyAddress)
 	}
 	r.Use(withLogger(logger))
 	r.Use(recoverer(logger))
@@ -257,12 +293,17 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.WithValue(ctxKeyCSRCheck, cfg.CheckCSRSignature))
 	r.Use(middleware.WithValue(ctxKeyOmitTransferEncoding, cfg.OmitTransferEncoding))
 	r.Use(middleware.WithValue(ctxKeyPasswordRenewal, cfg.PasswordRenewal))
+	r.Use(middleware.WithValue(ctxKeyClientCertCheck, cfg.VerifyClientCertificate))
 	r.Use(addServerHeader)
-	r.Use(addSecureHeaders)
+	r.Use(addSecureHeaders(cfg.OmitStrictTransportSecurity))
 	if len(cfg.AllowedHosts) > 0 {
 		r.Use(verifyAllowedHosts(cfg.AllowedHosts))
 	}
-	r.Use(maxBodySize(65536))
+	maxBody := int64(defaultMaxRequestBody)
+	if cfg.MaxRequestBody != 0 {
+		maxBody = cfg.MaxRequestBody
+	}
+	r.Use(maxBodySize(maxBody))
 	if cfg.RateLimit != 0 {
 		r.Use(rateLimit(cfg.RateLimit))
 	}
@@ -465,9 +506,18 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Verify certificate against CA certificates. A CA failure while
-		// fetching them is not a refusal of the client.
-		if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+		// The host's check replaces the one against the CA certificates.
+		if check := clientCertCheckFromContext(ctx); check != nil {
+			if err := check(ctx, r, aps, cert); err != nil {
+				if _, ok := errors.AsType[Error](err); !ok {
+					err = errInvalidClientCert
+				}
+				refuse(w, r, logMsgVerifyFailed, err)
+				return
+			}
+		} else if err := certCacheFromContext(ctx).Verify(ctx, aps, cert, r); err != nil {
+			// A CA failure while fetching the CA certificates is not a
+			// refusal of the client.
 			if errors.Is(err, errInvalidClientCert) {
 				refuse(w, r, logMsgVerifyFailed, err)
 			} else {
@@ -554,7 +604,7 @@ func tpmenroll(w http.ResponseWriter, r *http.Request) {
 	var ekPub []byte
 	var akPub []byte
 
-	_, err := decodeMultipartRequest(
+	err := decodeMultipartRequest(
 		r,
 		[]multipartPart{
 			{contentType: mimeTypePKCS10, data: &csr},
@@ -621,8 +671,7 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		return false
 	}
 
-	var estErr Error
-	if errors.As(err, &estErr) {
+	if estErr, ok := errors.AsType[Error](err); ok {
 		if estErr.StatusCode() == http.StatusInternalServerError {
 			LoggerFromContext(ctx).Errorw(msg, logFieldError, err.Error())
 		}
@@ -633,7 +682,8 @@ func writeOnError(ctx context.Context, w http.ResponseWriter, msg string, err er
 		}
 
 		w.WriteHeader(estErr.StatusCode())
-		w.Write([]byte(fmt.Sprintf("%d %s\n", estErr.StatusCode(), estErr.Error())))
+		//nolint:gosec // G705: the body is text/plain and addSecureHeaders sets nosniff.
+		_, _ = w.Write([]byte(fmt.Sprintf("%d %s\n", estErr.StatusCode(), estErr.Error())))
 	} else {
 		LoggerFromContext(ctx).Errorw(msg, logFieldError, err.Error())
 		errInternal.Write(w)
@@ -753,15 +803,36 @@ func addServerHeader(next http.Handler) http.Handler {
 	})
 }
 
-// addSecureHeaders is middleware which writes to an HTTP response a selection
-// of secure HTTP headers as described by the OWASP Secure Headers Project. See
-// https://owasp.org/www-project-secure-headers/. Many of these headers are of
-// only limited use to us, since our intended clients are not browsers, but
-// some may be useful for some clients.
-func addSecureHeaders(next http.Handler) http.Handler {
+// addSecureHeaders returns middleware which writes to an HTTP response a
+// selection of secure HTTP headers as described by the OWASP Secure Headers
+// Project. See https://owasp.org/www-project-secure-headers/. Many of these
+// headers are of only limited use to us, since our intended clients are not
+// browsers, but some may be useful for some clients. omitHSTS leaves out
+// Strict-Transport-Security.
+func addSecureHeaders(omitHSTS bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !omitHSTS {
+				w.Header().Set(strictTransportHeader, "max-age=31536000")
+			}
+			w.Header().Set(contentTypeOptionsHeader, "nosniff")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// trustProxyAddress is middleware which sets the request's RemoteAddr from the
+// X-Real-IP header or else from the first address in the X-Forwarded-For
+// header. The values are used as they are, without address validation. chi's
+// RealIP middleware also trusts True-Client-IP, which a proxy that overwrites
+// only the two documented headers would pass through from the client.
+func trustProxyAddress(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(strictTransportHeader, "max-age=31536000")
-		w.Header().Set(contentTypeOptionsHeader, "nosniff")
+		if addr := r.Header.Get(realIPHeader); addr != "" {
+			r.RemoteAddr = addr
+		} else if list := r.Header.Get(forwardedForHeader); list != "" {
+			r.RemoteAddr, _, _ = strings.Cut(list, ", ")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

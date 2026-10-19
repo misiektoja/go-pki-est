@@ -35,7 +35,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 )
 
@@ -157,8 +157,6 @@ func TestCheckBasicAuthResult(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -178,6 +176,7 @@ func TestCheckBasicAuthResult(t *testing.T) {
 			if gotUser != "" || gotPassword != "" {
 				t.Errorf("got credentials %q/%q for a request without an Authorization header", gotUser, gotPassword)
 			}
+			//nolint:staticcheck // SA1008: the server stores the header under this spelling for libest.
 			if got := len(w.Header()["WWW-Authenticate"]) > 0; got != tc.challenge {
 				t.Errorf("got Basic challenge %t, want %t", got, tc.challenge)
 			}
@@ -291,8 +290,6 @@ func TestCheckCSRSignature(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -389,8 +386,6 @@ func TestRefusalRecorder(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -459,7 +454,7 @@ func TestRateLimitRetryAfter(t *testing.T) {
 	h := newHookRouter(t, est.ServerConfig{RateLimit: 1, Refusals: log})
 
 	// The limiter allows a burst of twice the rate, so a short loop exceeds it.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		w := serve(h, http.MethodGet, cacertsEndpoint, "", nil)
 		if w.Code == http.StatusOK {
 			continue
@@ -484,7 +479,6 @@ func TestOmitTransferEncoding(t *testing.T) {
 	t.Parallel()
 
 	for _, omit := range []bool{false, true} {
-		omit := omit
 		want := encodingBase64
 		if omit {
 			want = ""
@@ -515,6 +509,32 @@ func TestOmitTransferEncoding(t *testing.T) {
 	}
 }
 
+// TestOmitStrictTransportSecurity checks that the Strict-Transport-Security header is sent by
+// default and left out when omitted, while the other secure headers stay.
+func TestOmitStrictTransportSecurity(t *testing.T) {
+	t.Parallel()
+
+	for _, omit := range []bool{false, true} {
+		want := "max-age=31536000"
+		if omit {
+			want = ""
+		}
+
+		h := newHookRouter(t, est.ServerConfig{OmitStrictTransportSecurity: omit})
+
+		w := serve(h, http.MethodGet, cacertsEndpoint, "", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("omit %t: got cacerts status %d", omit, w.Code)
+		}
+		if got := w.Header().Get("Strict-Transport-Security"); got != want {
+			t.Errorf("omit %t: got Strict-Transport-Security %q, want %q", omit, got, want)
+		}
+		if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("omit %t: got X-Content-Type-Options %q, want nosniff", omit, got)
+		}
+	}
+}
+
 // TestBase64Whitespace checks that requests with spaces, tabs and line breaks in base64 are accepted.
 func TestBase64Whitespace(t *testing.T) {
 	t.Parallel()
@@ -524,10 +544,7 @@ func TestBase64Whitespace(t *testing.T) {
 	plain := mustMakeBase64CSR(t, "Device")
 	var spaced bytes.Buffer
 	for i := 0; i < len(plain); i += 16 {
-		end := i + 16
-		if end > len(plain) {
-			end = len(plain)
-		}
+		end := min(i+16, len(plain))
 		spaced.Write(plain[i:end])
 		spaced.WriteString(" \t\r\n")
 	}
@@ -535,6 +552,43 @@ func TestBase64Whitespace(t *testing.T) {
 	w := serve(h, http.MethodPost, enrollEndpoint, mimeTypePKCS10, spaced.Bytes())
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want %d: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// Applies the 64 KiB default request limit and the limit MaxRequestBody sets.
+func TestMaxRequestBody(t *testing.T) {
+	t.Parallel()
+
+	// Whitespace pads a valid request past 64 KiB, as a large post-quantum CSR would be.
+	body := append(mustMakeBase64CSR(t, "Device"), bytes.Repeat([]byte("\r\n"), 40<<10)...)
+	tests := []struct {
+		name   string
+		limit  int64
+		status int
+	}{
+		{"Default", 0, http.StatusRequestEntityTooLarge},
+		{"Raised", 128 << 10, http.StatusOK},
+		{"Exact", int64(len(body)), http.StatusOK},
+		{"OneShort", int64(len(body)) - 1, http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHookRouter(t, est.ServerConfig{MaxRequestBody: tc.limit})
+			w := serve(h, http.MethodPost, enrollEndpoint, mimeTypePKCS10, body)
+			if w.Code != tc.status {
+				t.Fatalf("got status %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+		})
+	}
+
+	ca, err := mockca.NewTransient()
+	if err != nil {
+		t.Fatalf("failed to create mock CA: %v", err)
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: ca, MaxRequestBody: -1}); err == nil {
+		t.Fatal("negative MaxRequestBody accepted")
 	}
 }
 
@@ -625,8 +679,6 @@ func TestServerKeyGenUnrecognizedPKCS8(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

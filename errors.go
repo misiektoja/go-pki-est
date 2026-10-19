@@ -78,10 +78,6 @@ var (
 		status: http.StatusBadRequest,
 		desc:   "malformed TPM object public area",
 	}
-	errMalformedCert = &estError{
-		status: http.StatusBadRequest,
-		desc:   "malformed certificate",
-	}
 	errNoCertificatesInPKCS7 = &estError{
 		status: http.StatusBadRequest,
 		desc:   "no certificates found in PKCS7 structure",
@@ -98,10 +94,6 @@ var (
 	errSubjectChanged = &estError{
 		status: http.StatusForbidden,
 		desc:   "Subject and SubjectAltName fields in CSR must be identical to certificate being renewed",
-	}
-	errTPMPublicAreaFlags = &estError{
-		status: http.StatusUnprocessableEntity,
-		desc:   "EK is not a storage key",
 	}
 	errTPMPublicKeyNoMatch = &estError{
 		status: http.StatusUnprocessableEntity,
@@ -136,5 +128,5 @@ func (e estError) Write(w http.ResponseWriter) {
 		w.Header().Set(retryAfterHeader, strconv.Itoa(e.retryAfter))
 	}
 	w.WriteHeader(e.status)
-	w.Write([]byte(fmt.Sprintf("%d %s\n", e.status, e.desc)))
+	_, _ = w.Write([]byte(fmt.Sprintf("%d %s\n", e.status, e.desc)))
 }

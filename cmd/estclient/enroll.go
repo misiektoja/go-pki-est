@@ -128,11 +128,12 @@ func enrollCommon(w io.Writer, set *flag.FlagSet, renew, keygen bool) error {
 
 	var cert *x509.Certificate
 	var key []byte
-	if renew {
+	switch {
+	case renew:
 		cert, err = client.Reenroll(ctx, csr)
-	} else if keygen {
+	case keygen:
 		cert, key, err = client.ServerKeyGen(ctx, csr)
-	} else {
+	default:
 		cert, err = client.Enroll(ctx, csr)
 	}
 	if err != nil {

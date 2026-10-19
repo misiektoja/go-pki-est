@@ -23,7 +23,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"net/url"
@@ -34,11 +33,12 @@ import (
 	"time"
 
 	"github.com/ThalesIgnite/crypto11"
-	"github.com/misiektoja/go-pki-est"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 
 	"github.com/globalsign/pemfile"
 	"github.com/globalsign/tpmkeys"
+
+	est "github.com/misiektoja/go-pki-est"
 )
 
 // config contains configuration options.
@@ -256,7 +256,7 @@ func (cfg *config) CSRTemplate() (*x509.CertificateRequest, error) {
 
 	// Process SAN IP addresses.
 	if v, ok := cfg.flags[ipsFlag]; ok {
-		for _, strIP := range strings.Split(v, cfg.separator) {
+		for strIP := range strings.SplitSeq(v, cfg.separator) {
 			ip := net.ParseIP(strIP)
 			if ip == nil {
 				return nil, fmt.Errorf("failed to parse IP address %q", strIP)
@@ -267,7 +267,7 @@ func (cfg *config) CSRTemplate() (*x509.CertificateRequest, error) {
 
 	// Process SAN URIs.
 	if v, ok := cfg.flags[urisFlag]; ok {
-		for _, strURI := range strings.Split(v, cfg.separator) {
+		for strURI := range strings.SplitSeq(v, cfg.separator) {
 			uri, err := url.Parse(strURI)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse URI: %v", err)
@@ -312,7 +312,7 @@ func (k *hsmKey) Get(baseDir string) (key interface{}, closeFunc func() error, e
 
 	if k.KeyID == nil {
 		err = errNoHSMKeyID
-		return
+		return key, closeFunc, err
 	}
 
 	// Get the HSM PIN from the terminal if one was not specified in the
@@ -322,7 +322,7 @@ func (k *hsmKey) Get(baseDir string) (key interface{}, closeFunc func() error, e
 		pin, err = passwordFromTerminal("PIN", "HSM")
 		if err != nil {
 			err = fmt.Errorf("failed to get HSM PIN: %w", err)
-			return
+			return key, closeFunc, err
 		}
 
 		k.PIN = string(pin)
@@ -336,7 +336,7 @@ func (k *hsmKey) Get(baseDir string) (key interface{}, closeFunc func() error, e
 	})
 	if err != nil {
 		err = fmt.Errorf("failed to configure PKCS11: %w", err)
-		return
+		return key, closeFunc, err
 	}
 	closeFunc = func() error {
 		return p.Close()
@@ -345,39 +345,49 @@ func (k *hsmKey) Get(baseDir string) (key interface{}, closeFunc func() error, e
 	key, err = p.FindKeyPair(k.KeyID.Bytes(), nil)
 	if err != nil {
 		err = fmt.Errorf("failed to find key pair: %w", err)
-		return
+		return key, closeFunc, err
 	} else if key == nil {
 		err = errors.New("failed to find key pair")
-		return
+		return key, closeFunc, err
 	}
 
-	return
+	return key, closeFunc, err
 }
 
-// Get returns a private key and a close function.
+// Get returns a private key and a close function. A persistent or storage
+// handle outside the unsigned 32-bit range is refused before the TPM is opened.
 func (k *tpmKey) Get(baseDir string) (interface{}, func() error, error) {
 	var key interface{}
-	var err error
 
 	switch {
 	case k.Persistent != nil:
-		key, err = tpmkeys.NewFromPersistentHandle(k.Device, uint32(k.Persistent.Uint64()), k.KeyPass)
+		handle, err := toHandle(k.Persistent)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read persistent handle: %w", err)
+		}
+
+		key, err = tpmkeys.NewFromPersistentHandle(k.Device, uint32(handle), k.KeyPass)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get private key: %w", err)
 		}
 
 	case k.Storage != nil:
-		pub, err := ioutil.ReadFile(fullPath(baseDir, k.Public))
+		storage, err := toHandle(k.Storage)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read storage handle: %w", err)
+		}
+
+		pub, err := os.ReadFile(fullPath(baseDir, k.Public))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read public area: %w", err)
 		}
 
-		priv, err := ioutil.ReadFile(fullPath(baseDir, k.Private))
+		priv, err := os.ReadFile(fullPath(baseDir, k.Private))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read private area: %w", err)
 		}
 
-		key, err = tpmkeys.NewFromBlobs(k.Device, uint32(k.Storage.Uint64()), k.StoragePass,
+		key, err = tpmkeys.NewFromBlobs(k.Device, uint32(storage), k.StoragePass,
 			pub, priv, k.KeyPass)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get private key: %w", err)
@@ -438,6 +448,8 @@ func (k *privateKey) UnmarshalJSON(b []byte) error {
 }
 
 // newConfig returns a configuration object from a file.
+//
+//nolint:gocyclo // Each option is checked in turn. Splitting the checks would scatter them.
 func newConfig(set *flag.FlagSet) (config, error) {
 	var cfg = config{
 		flagSet:   set,
@@ -513,7 +525,7 @@ func newConfig(set *flag.FlagSet) (config, error) {
 		}
 
 		// Read the file and parse the configuration.
-		data, err := ioutil.ReadFile(filename)
+		data, err := os.ReadFile(filename)
 		if err != nil {
 			return config{}, fmt.Errorf("failed to open configuration file: %v", err)
 		}
@@ -548,7 +560,7 @@ func newConfig(set *flag.FlagSet) (config, error) {
 
 	if hdrs, ok := cfg.flags[headersFlag]; ok {
 		cfg.AdditionalHeaders = make(map[string]string)
-		for _, hdr := range strings.Split(hdrs, cfg.separator) {
+		for hdr := range strings.SplitSeq(hdrs, cfg.separator) {
 			vals := strings.SplitN(hdr, ":", 2)
 			name := vals[0]
 			val := ""
@@ -676,7 +688,7 @@ func passwordFromTerminal(cred, target string) ([]byte, error) {
 	// use it if it is.
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		if !os.IsNotExist(err) || !terminal.IsTerminal(int(os.Stdin.Fd())) {
+		if !os.IsNotExist(err) || !term.IsTerminal(int(os.Stdin.Fd())) {
 			return nil, fmt.Errorf("failed to open terminal: %w", err)
 		}
 		tty = os.Stdin
@@ -684,9 +696,9 @@ func passwordFromTerminal(cred, target string) ([]byte, error) {
 		defer tty.Close()
 	}
 
-	tty.Write([]byte(fmt.Sprintf("Enter %s for %s: ", cred, target)))
-	pass, err := terminal.ReadPassword(int(tty.Fd()))
-	tty.Write([]byte("\n"))
+	_, _ = tty.Write([]byte(fmt.Sprintf("Enter %s for %s: ", cred, target)))
+	pass, err := term.ReadPassword(int(tty.Fd()))
+	_, _ = tty.Write([]byte("\n"))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read password: %w", err)

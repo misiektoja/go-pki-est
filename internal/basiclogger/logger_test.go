@@ -25,6 +25,7 @@ import (
 	"github.com/misiektoja/go-pki-est/internal/basiclogger"
 )
 
+// TestLogger checks the level, message and fields of each logging method.
 func TestLogger(t *testing.T) {
 	t.Parallel()
 
@@ -93,8 +94,6 @@ func TestLogger(t *testing.T) {
 	}
 
 	for i, tc := range testcases {
-		tc := tc
-
 		t.Run(strconv.Itoa(i+1), func(t *testing.T) {
 			buf.Reset()
 

@@ -18,7 +18,7 @@ package est
 import (
 	"encoding/asn1"
 	"io"
-	"io/ioutil"
+	"net/http"
 )
 
 // URI constants.
@@ -39,6 +39,7 @@ const (
 	contentTypeHeader        = "Content-Type"
 	contentTypeOptionsHeader = "X-Content-Type-Options"
 	encodingTypeBase64       = "base64"
+	forwardedForHeader       = "X-Forwarded-For"
 	mimeParamBoundary        = "boundary"
 	mimeParamSMIMEType       = "smime-type"
 	mimeTypeCertificate      = "application/pkix-cert"
@@ -57,6 +58,7 @@ const (
 	mimeTypeTextPlainUTF8    = "text/plain; charset=utf-8"
 	paramValueCertsOnly      = "certs-only"
 	paramValueGenKey         = "server-generated-key"
+	realIPHeader             = "X-Real-IP"
 	retryAfterHeader         = "Retry-After"
 	serverHeader             = "Server"
 	serverKeyGenBoundary     = "estServerKeyGenBoundary"
@@ -73,9 +75,9 @@ var (
 	oidExtensionRequest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 14}
 )
 
-// consumeAndClose discards any remaining data in the io.ReadCloser and then
-// closes it.
-func consumeAndClose(rc io.ReadCloser) {
-	io.Copy(ioutil.Discard, rc)
-	rc.Close()
+// consumeAndClose discards any remaining data in the response body and then
+// closes it. Both errors are ignored because the caller has its result.
+func consumeAndClose(resp *http.Response) {
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }

@@ -21,9 +21,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
+	"os"
 
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -39,9 +40,12 @@ var (
 	errNoTPMEK                 = errors.New("no endorsement key in configuration file")
 	errNoTPMSK                 = errors.New("no storage key in configuration file")
 	errNoTPMHandleOrPublicArea = errors.New("no key handle or public/private areas in configuration file")
+	errInvalidHandle           = errors.New("invalid handle value")
 )
 
 // tpmenroll requests a new certificate.
+//
+//nolint:gocyclo // The enrollment steps run in order and each one fails on its own error.
 func tpmenroll(w io.Writer, set *flag.FlagSet) error {
 	cfg, err := newConfig(set)
 	if err != nil {
@@ -54,15 +58,16 @@ func tpmenroll(w io.Writer, set *flag.FlagSet) error {
 	}()
 
 	// Ensure all required TPM fields are present.
-	if cfg.PrivateKey == nil {
+	switch {
+	case cfg.PrivateKey == nil:
 		return errNoPrivateKey
-	} else if cfg.PrivateKey.TPM == nil {
+	case cfg.PrivateKey.TPM == nil:
 		return errNoTPMPrivateKey
-	} else if len(cfg.ekcerts) == 0 {
+	case len(cfg.ekcerts) == 0:
 		return errNoTPMEKCerts
-	} else if cfg.PrivateKey.TPM.EK == nil {
+	case cfg.PrivateKey.TPM.EK == nil:
 		return errNoTPMEK
-	} else if cfg.PrivateKey.TPM.Device == "" {
+	case cfg.PrivateKey.TPM.Device == "":
 		return errNoTPMDevice
 	}
 
@@ -146,12 +151,12 @@ func tpmenroll(w io.Writer, set *flag.FlagSet) error {
 			return errors.New("no private area provided")
 		}
 
-		pub, err := ioutil.ReadFile(fullPath(cfg.baseDir, pubfile))
+		pub, err := os.ReadFile(fullPath(cfg.baseDir, pubfile))
 		if err != nil {
 			return fmt.Errorf("failed to read public area: %v", err)
 		}
 
-		priv, err := ioutil.ReadFile(fullPath(cfg.baseDir, privfile))
+		priv, err := os.ReadFile(fullPath(cfg.baseDir, privfile))
 		if err != nil {
 			return fmt.Errorf("failed to read private area: %v", err)
 		}
@@ -185,7 +190,7 @@ func tpmenroll(w io.Writer, set *flag.FlagSet) error {
 	if err != nil {
 		return fmt.Errorf("failed to start auth session: %v", err)
 	}
-	defer tpm2.FlushContext(tpm, sess)
+	defer func() { _ = tpm2.FlushContext(tpm, sess) }()
 
 	if _, _, err := tpm2.PolicySecret(tpm, tpm2.HandleEndorsement,
 		tpm2.AuthCommand{
@@ -281,7 +286,7 @@ func readAKPublic(cfg *config) ([]byte, error) {
 	// First check if the public area has been referenced in a file, and read
 	// and return if it has.
 	if cfg.PrivateKey.TPM.Public != "" {
-		data, err := ioutil.ReadFile(fullPath(cfg.baseDir, cfg.PrivateKey.TPM.Public))
+		data, err := os.ReadFile(fullPath(cfg.baseDir, cfg.PrivateKey.TPM.Public))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read public area: %v", err)
 		}
@@ -337,16 +342,17 @@ func readPublicAreaFromTPM(cfg *config, handle tpmutil.Handle) ([]byte, error) {
 }
 
 // toHandle converts a *big.Int to a (unsigned 32-bit) TPM handle. An error
-// is returned if the integer cannot be represented as a TPM handle.
+// wrapping errInvalidHandle is returned if the integer cannot be represented
+// as a TPM handle.
 func toHandle(n *big.Int) (tpmutil.Handle, error) {
 	if !n.IsUint64() {
-		return 0, fmt.Errorf("invalid handle value: %v", n)
+		return 0, fmt.Errorf("%w: %v", errInvalidHandle, n)
 	}
 
-	tmp := uint32(n.Uint64())
-	if uint64(tmp) != n.Uint64() {
-		return 0, fmt.Errorf("invalid handle value: %v", n)
+	v := n.Uint64()
+	if v > math.MaxUint32 {
+		return 0, fmt.Errorf("%w: %v", errInvalidHandle, n)
 	}
 
-	return tpmutil.Handle(tmp), nil
+	return tpmutil.Handle(v), nil
 }

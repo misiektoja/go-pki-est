@@ -3,6 +3,41 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.2.0] - 2026-10-20
+
+The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
+client certificate of a renewal itself and choose whether the server sends HSTS. The server router
+moves to chi v5. The client no longer panics on a truncated error response.
+
+### Added
+- **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
+  The default stays 64 KiB, which refuses CSRs of the largest SLH-DSA keys, such as
+  SLH-DSA-SHA2-256f at about 67 KB in base64. `NewRouter` refuses a negative value.
+- **`ServerConfig.VerifyClientCertificate`** checks the TLS client certificate of a
+  `/simplereenroll` request in place of the built-in check against the `/cacerts` certificates.
+  It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
+  ML-DSA CA signed. The TLS listener must then request the certificate without verifying it, for
+  example with `tls.RequestClientCert`. Without the hook, renewal behaves as before.
+- **`ServerConfig.OmitStrictTransportSecurity`** leaves the `Strict-Transport-Security` header out
+  of responses, so the host can send its own value or none. By default the server still sends
+  `max-age=31536000`.
+
+### Changed
+- **chi v5.** The server router uses `github.com/go-chi/chi/v5` v5.5.0 instead of chi v4.1.2.
+  govulncheck flags v4 for an open-redirect advisory that has no v4 fix, although this module
+  never called the affected middleware. A 405 response now lists the supported methods in an
+  `Allow` header. Proxy address headers work as before. `True-Client-IP` is ignored.
+- **`estclient -version` and `estserver -version`** report 1.2.0.
+
+### Fixed
+- **Truncated error responses.** When the body of an error response ends early, client calls
+  return an `est.Error` with the HTTP status and `Retry-After` value instead of a bare read
+  error. `CSRAttrs` no longer panics in that case.
+- **`estclient` TPM handles.** A `persistent_handle` or `storage_handle` that does not fit in 32
+  bits is refused. It was truncated to a different handle before.
+- **`estserver` request headers** must arrive within 30 seconds, as on the TLS-SRP port. A client
+  that never finishes its headers no longer holds a connection open.
+
 ## [1.1.0] - 2026-10-19
 
 First release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
@@ -96,6 +131,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.2.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.2.0
 [1.1.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.1.0
 [1.0.7]: https://github.com/globalsign/est/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/globalsign/est/compare/v1.0.5...v1.0.6

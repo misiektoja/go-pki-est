@@ -31,7 +31,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,7 +47,7 @@ import (
 	"github.com/smallstep/scep/x509util"
 	"go.mozilla.org/pkcs7"
 
-	"github.com/misiektoja/go-pki-est"
+	est "github.com/misiektoja/go-pki-est"
 	"github.com/misiektoja/go-pki-est/internal/basiclogger"
 	"github.com/misiektoja/go-pki-est/internal/mockca"
 	"github.com/misiektoja/go-pki-est/internal/tpm"
@@ -91,6 +91,7 @@ func init() {
 	}
 }
 
+// TestCSRAttrs checks that Client.CSRAttrs returns empty and full attribute sets from the server.
 func TestCSRAttrs(t *testing.T) {
 	t.Parallel()
 
@@ -125,8 +126,6 @@ func TestCSRAttrs(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -184,38 +183,123 @@ func TestClientContextDeadline(t *testing.T) {
 	}
 }
 
+// TestClientClosesConnections checks that the client closes its connection after a failed request.
 func TestClientClosesConnections(t *testing.T) {
 	t.Parallel()
 
-	var open int64
+	var open atomic.Int64
 	s := httptest.NewUnstartedServer(http.NotFoundHandler())
 	s.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		switch state {
 		case http.StateNew:
-			atomic.AddInt64(&open, 1)
+			open.Add(1)
 		case http.StateClosed:
-			atomic.AddInt64(&open, -1)
+			open.Add(-1)
+		default:
+			// The other states belong to connections that are still open.
 		}
 	}
 	s.StartTLS()
 	defer s.Close()
 
 	client := est.Client{Host: strings.TrimPrefix(s.URL, "https://"), InsecureSkipVerify: true}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := client.CACerts(context.Background()); err == nil {
 			t.Fatal("CACerts unexpectedly succeeded")
 		}
 	}
 
 	deadline := time.Now().Add(testTimeout)
-	for atomic.LoadInt64(&open) != 0 {
+	for open.Load() != 0 {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d connections still open", atomic.LoadInt64(&open))
+			t.Fatalf("%d connections still open", open.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
+// TestClientTruncatedErrorBody checks that the client reports the status of an
+// error response whose body ends early, and that CSRAttrs then still treats 404
+// as an empty attribute set.
+func TestClientTruncatedErrorBody(t *testing.T) {
+	t.Parallel()
+
+	csrattrs := func(ctx context.Context, c *est.Client) error {
+		_, err := c.CSRAttrs(ctx)
+		return err
+	}
+	cacerts := func(ctx context.Context, c *est.Client) error {
+		_, err := c.CACerts(ctx)
+		return err
+	}
+
+	var testcases = []struct {
+		name   string
+		status int
+		call   func(context.Context, *est.Client) error
+		want   int
+	}{
+		{
+			name:   "CSRAttrs/NotFound",
+			status: http.StatusNotFound,
+			call:   csrattrs,
+		},
+		{
+			name:   "CSRAttrs/ServiceUnavailable",
+			status: http.StatusServiceUnavailable,
+			call:   csrattrs,
+			want:   http.StatusServiceUnavailable,
+		},
+		{
+			name:   "CACerts/ServiceUnavailable",
+			status: http.StatusServiceUnavailable,
+			call:   cacerts,
+			want:   http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The declared length exceeds the body, so the server closes the
+			// connection and the client cannot read the whole body.
+			s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(typeHeader, mimeTypeText)
+				w.Header().Set("Content-Length", "100")
+				w.Header().Set("Retry-After", "7")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte("short"))
+			}))
+			defer s.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+			defer cancel()
+
+			client := est.Client{Host: strings.TrimPrefix(s.URL, "https://"), InsecureSkipVerify: true}
+			err := tc.call(ctx, &client)
+			if tc.want == 0 {
+				if err != nil {
+					t.Fatalf("got error %v, want none", err)
+				}
+				return
+			}
+
+			var estErr est.Error
+			if !errors.As(err, &estErr) {
+				t.Fatalf("got error %v of type %T, want an est.Error", err, err)
+			}
+			if got := estErr.StatusCode(); got != tc.want {
+				t.Errorf("got status %d, want %d", got, tc.want)
+			}
+			if got := estErr.RetryAfter(); got != 7 {
+				t.Errorf("got Retry-After %d, want 7", got)
+			}
+		})
+	}
+}
+
+// TestEnroll checks enrollment with ECDSA, RSA and ML-DSA keys and the errors the CA returns.
 func TestEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -274,8 +358,6 @@ func TestEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -406,8 +488,6 @@ func TestEnrollChallengePassword(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -419,7 +499,7 @@ func TestEnrollChallengePassword(t *testing.T) {
 
 			// tls-unique is only available up to TLS 1.2.
 			s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				body, _ := ioutil.ReadAll(r.Body)
+				body, _ := io.ReadAll(r.Body)
 				der, _ := base64.StdEncoding.DecodeString(string(body))
 				csr, _ := x509.ParseCertificateRequest(der)
 				ch <- received{csr: csr, tlsUnique: r.TLS.TLSUnique}
@@ -498,6 +578,7 @@ func TestEnrollChallengePassword(t *testing.T) {
 	}
 }
 
+// TestReenroll checks renewal with ECDSA, RSA and ML-DSA keys and refusals for changed names and bad certificates.
 func TestReenroll(t *testing.T) {
 	t.Parallel()
 
@@ -604,8 +685,6 @@ func TestReenroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			// Create test EST server and client.
 
@@ -708,6 +787,7 @@ func TestReenrollWithoutTLS(t *testing.T) {
 	}
 }
 
+// TestServerKeyGen checks server key generation with PKCS #8 and PKCS #7 key responses.
 func TestServerKeyGen(t *testing.T) {
 	t.Parallel()
 
@@ -737,8 +817,6 @@ func TestServerKeyGen(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -830,6 +908,7 @@ func TestServerKeyGen(t *testing.T) {
 	}
 }
 
+// TestTPMEnroll checks that a TPM enrollment returns a credential that decrypts the certificate.
 func TestTPMEnroll(t *testing.T) {
 	t.Parallel()
 
@@ -845,8 +924,6 @@ func TestTPMEnroll(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.aps, func(t *testing.T) {
 			t.Parallel()
 
@@ -919,41 +996,72 @@ func TestTPMEnroll(t *testing.T) {
 	}
 }
 
-// TestTrustProxyHeaders checks the opt-in and precedence of proxy address headers.
+// TestTrustProxyHeaders checks the opt-in and precedence of proxy address
+// headers. True-Client-IP is ignored and the values are not validated.
 func TestTrustProxyHeaders(t *testing.T) {
 	t.Parallel()
 
+	const (
+		forwardedFor = "X-Forwarded-For"
+		realIP       = "X-Real-IP"
+		trueClientIP = "True-Client-IP"
+	)
+
 	var testcases = []struct {
-		name   string
-		trust  bool
-		realIP string
-		want   string
+		name    string
+		trust   bool
+		headers map[string]string
+		want    string
 	}{
 		{
-			name: "Disabled",
-			want: "192.0.2.1:1234",
+			name:    "Disabled",
+			headers: map[string]string{forwardedFor: "203.0.113.1"},
+			want:    "192.0.2.1:1234",
 		},
 		{
-			name:   "DisabledBothHeaders",
-			realIP: "203.0.113.2",
-			want:   "192.0.2.1:1234",
+			name:    "DisabledBothHeaders",
+			headers: map[string]string{forwardedFor: "203.0.113.1", realIP: "203.0.113.2"},
+			want:    "192.0.2.1:1234",
 		},
 		{
-			name:  "Enabled",
-			trust: true,
-			want:  "203.0.113.1",
+			name:    "Enabled",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1"},
+			want:    "203.0.113.1",
 		},
 		{
-			name:   "RealIPPrecedence",
-			trust:  true,
-			realIP: "203.0.113.2",
-			want:   "203.0.113.2",
+			name:    "RealIPPrecedence",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1", realIP: "203.0.113.2"},
+			want:    "203.0.113.2",
+		},
+		{
+			name:    "ForwardedForList",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1, 198.51.100.7"},
+			want:    "203.0.113.1",
+		},
+		{
+			name:    "TrueClientIPIgnored",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1", trueClientIP: "203.0.113.3"},
+			want:    "203.0.113.1",
+		},
+		{
+			name:    "TrueClientIPOnly",
+			trust:   true,
+			headers: map[string]string{trueClientIP: "203.0.113.3"},
+			want:    "192.0.2.1:1234",
+		},
+		{
+			name:    "NotValidated",
+			trust:   true,
+			headers: map[string]string{realIP: "proxy.example"},
+			want:    "proxy.example",
 		},
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -971,14 +1079,66 @@ func TestTrustProxyHeaders(t *testing.T) {
 
 			// httptest.NewRequest sets RemoteAddr to 192.0.2.1:1234.
 			req := httptest.NewRequest(http.MethodGet, "/healthcheck", nil)
-			req.Header.Set("X-Forwarded-For", "203.0.113.1")
-			if tc.realIP != "" {
-				req.Header.Set("X-Real-IP", tc.realIP)
+			for name, value := range tc.headers {
+				req.Header.Set(name, value)
 			}
 			r.ServeHTTP(httptest.NewRecorder(), req)
 
 			if got != tc.want {
 				t.Fatalf("got remote address %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMethodNotAllowed checks that a 405 response lists the methods of the
+// endpoint in an Allow header, as RFC 9110 section 15.5.6 requires.
+func TestMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	r, err := est.NewRouter(&est.ServerConfig{})
+	if err != nil {
+		t.Fatalf("failed to create new router: %v", err)
+	}
+
+	var testcases = []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{
+			name:   "CACerts",
+			method: http.MethodPost,
+			path:   cacertsEndpoint,
+			want:   http.MethodGet,
+		},
+		{
+			name:   "Enroll",
+			method: http.MethodGet,
+			path:   enrollEndpoint,
+			want:   http.MethodPost,
+		},
+		{
+			name:   "CSRAttrsWithLabel",
+			method: http.MethodDelete,
+			path:   "/.well-known/est/label/csrattrs",
+			want:   http.MethodGet,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("got status %d, want %d", w.Code, http.StatusMethodNotAllowed)
+			}
+			if got := w.Header().Values("Allow"); len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("got Allow %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -1201,7 +1361,7 @@ func TestServerErrors(t *testing.T) {
 		var tc = tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := http.NewRequest(tc.method, s.URL+tc.path, ioutil.NopCloser(bytes.NewBuffer(tc.body)))
+			r, err := http.NewRequest(tc.method, s.URL+tc.path, io.NopCloser(bytes.NewBuffer(tc.body)))
 			if err != nil {
 				t.Fatalf("failed to create new HTTP request: %v", err)
 			}
@@ -1225,7 +1385,7 @@ func TestServerErrors(t *testing.T) {
 				t.Fatalf("got status code %d, want %d", resp.StatusCode, tc.status)
 			}
 
-			data, err := ioutil.ReadAll(resp.Body)
+			data, err := io.ReadAll(resp.Body)
 			if err != nil {
 				t.Fatalf("failed to read HTTP response body: %s", err)
 			}
@@ -1237,6 +1397,7 @@ func TestServerErrors(t *testing.T) {
 	}
 }
 
+// TestAllowedHosts checks that AllowedHosts accepts IPv6 hosts with or without brackets and a port and refuses others.
 func TestAllowedHosts(t *testing.T) {
 	t.Parallel()
 
@@ -1273,8 +1434,6 @@ func TestAllowedHosts(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

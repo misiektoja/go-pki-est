@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -114,7 +113,7 @@ type Client struct {
 
 // Client constants.
 const (
-	estVersion = "v1.1.0"
+	estVersion = "v1.2.0"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
 )
 
@@ -129,19 +128,19 @@ func (c *Client) CACerts(ctx context.Context) ([]*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
-	defer consumeAndClose(resp.Body)
+	defer consumeAndClose(resp)
 
 	if err := checkResponseError(resp); err != nil {
 		return nil, err
 	}
 
-	if err := verifyResponseType(resp, mimeTypePKCS7, encodingTypeBase64); err != nil {
+	if err := verifyResponseType(resp, mimeTypePKCS7); err != nil {
 		return nil, err
 	}
 
@@ -159,13 +158,13 @@ func (c *Client) CSRAttrs(ctx context.Context) (CSRAttrs, error) {
 	if err != nil {
 		return CSRAttrs{}, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return CSRAttrs{}, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
-	defer consumeAndClose(resp.Body)
+	defer consumeAndClose(resp)
 
 	if err := checkResponseError(resp); err != nil {
 		// Per RFC7030 section 4.5.2, an HTTP response code of 204 or 404
@@ -175,16 +174,15 @@ func (c *Client) CSRAttrs(ctx context.Context) (CSRAttrs, error) {
 		// it desires in a client certification request. Therefore we do not
 		// treat these two response codes as errors, and we just return an
 		// empty CSR attributes object.
-		var estErr Error
-		if errors.As(err, &estErr); estErr.StatusCode() == http.StatusNotFound ||
-			estErr.StatusCode() == http.StatusNoContent {
+		if estErr, ok := errors.AsType[Error](err); ok && (estErr.StatusCode() == http.StatusNotFound ||
+			estErr.StatusCode() == http.StatusNoContent) {
 			return CSRAttrs{}, nil
 		}
 
 		return CSRAttrs{}, err
 	}
 
-	if err := verifyResponseType(resp, mimeTypeCSRAttrs, encodingTypeBase64); err != nil {
+	if err := verifyResponseType(resp, mimeTypeCSRAttrs); err != nil {
 		return CSRAttrs{}, err
 	}
 
@@ -212,7 +210,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// RFC 7030 section 3.5 recommends including the tls-unique value in the
 	// CSR challenge password. It is not available with TLS 1.3.
@@ -225,7 +223,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 		}
 	}
 
-	reqBody := ioutil.NopCloser(bytes.NewBuffer(base64Encode(crBs)))
+	reqBody := io.NopCloser(bytes.NewBuffer(base64Encode(crBs)))
 	req, err := c.newRequest(ctx, http.MethodPost, endpoint, mimeTypePKCS10, encodingTypeBase64, mimeTypePKCS7, reqBody)
 	if err != nil {
 		return nil, err
@@ -235,13 +233,13 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
-	defer consumeAndClose(resp.Body)
+	defer consumeAndClose(resp)
 
 	if err := checkResponseError(resp); err != nil {
 		return nil, err
 	}
 
-	if err := verifyResponseType(resp, mimeTypePKCS7, encodingTypeBase64); err != nil {
+	if err := verifyResponseType(resp, mimeTypePKCS7); err != nil {
 		return nil, err
 	}
 
@@ -250,7 +248,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 
 // ServerKeyGen requests a new certificate and a server-generated private key.
 func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (*x509.Certificate, []byte, error) {
-	reqBody := ioutil.NopCloser(bytes.NewBuffer(base64Encode(r.Raw)))
+	reqBody := io.NopCloser(bytes.NewBuffer(base64Encode(r.Raw)))
 
 	req, err := c.newRequest(ctx, http.MethodPost, serverkeygenEndpoint,
 		mimeTypePKCS10, encodingTypeBase64, mimeTypeMultipart, reqBody)
@@ -262,13 +260,13 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 	if err != nil {
 		return nil, nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
-	defer consumeAndClose(resp.Body)
+	defer consumeAndClose(resp)
 
 	if err := checkResponseError(resp); err != nil {
 		return nil, nil, err
@@ -292,12 +290,12 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 	for i := 1; ; i++ {
 		// First, break if there are no more parts in the response.
 		part, err := mpr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return nil, nil, fmt.Errorf("failed to read HTTP response part: %w", err)
 		}
-		defer part.Close()
+		defer func() { _ = part.Close() }()
 
 		// Return with error if there are more parts than we expect.
 		if i > numParts {
@@ -383,7 +381,7 @@ func (c *Client) TPMEnroll(
 		return nil, nil, nil, err
 	}
 
-	reqBody := ioutil.NopCloser(buf)
+	reqBody := io.NopCloser(buf)
 
 	req, err := c.newRequest(ctx, http.MethodPost, tpmenrollEndpoint,
 		contentType, "", mimeTypeMultipart, reqBody)
@@ -395,13 +393,13 @@ func (c *Client) TPMEnroll(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
-	defer consumeAndClose(resp.Body)
+	defer consumeAndClose(resp)
 
 	if err := checkResponseError(resp); err != nil {
 		return nil, nil, nil, err
@@ -435,12 +433,12 @@ func (c *Client) TPMEnroll(
 	for i := 1; ; i++ {
 		// First, break if there are no more parts in the response.
 		part, err := mpr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to get next HTTP response part: %w", err)
 		}
-		defer part.Close()
+		defer func() { _ = part.Close() }()
 
 		// Return with error if there are more parts than we expect.
 		if i > numParts {
@@ -449,7 +447,7 @@ func (c *Client) TPMEnroll(
 
 		// Check content-transfer-encoding is as expected, and read the part
 		// body.
-		if err := verifyPartTypeResponse(part, parts[i-1].ctype, encodingTypeBase64); err != nil {
+		if err := verifyPartTypeResponse(part, parts[i-1].ctype); err != nil {
 			return nil, nil, nil, err
 		}
 
@@ -516,12 +514,10 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 
 	// Rebuild extensionRequest from Extensions to preserve critical values.
 	cr := x509util.CertificateRequest{
-		CertificateRequest: x509.CertificateRequest{
-			RawSubject:         stdCsr.RawSubject,
-			ExtraExtensions:    stdCsr.Extensions,
-			SignatureAlgorithm: stdCsr.SignatureAlgorithm,
-		},
-		ChallengePassword: challengePassword,
+		RawSubject:         stdCsr.RawSubject,
+		ExtraExtensions:    stdCsr.Extensions,
+		SignatureAlgorithm: stdCsr.SignatureAlgorithm,
+		ChallengePassword:  challengePassword,
 	}
 	for _, attr := range stdCsr.Attributes {
 		if !attr.Type.Equal(oidExtensionRequest) {
@@ -535,7 +531,8 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 // checkResponseError returns nil if the HTTP response status code is 200 OK,
 // otherwise it returns an error object implementing est.Error. In order to
 // parse the Retry-After header and return a value, note that 202 Accepted
-// is treated as an error for this purpose.
+// is treated as an error for this purpose. A body that cannot be read still
+// yields an est.Error with the response status, so callers can act on it.
 func checkResponseError(r *http.Response) error {
 	if r.StatusCode == http.StatusOK {
 		return nil
@@ -557,14 +554,14 @@ func checkResponseError(r *http.Response) error {
 	if err == nil || r.Header.Get(contentTypeHeader) == "" {
 		switch mediaType {
 		case "", mimeTypeTextPlain, mimeTypeJSON, mimeTypeProblemJSON:
-			data, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				return err
-			}
-
-			if len(data) > 0 {
+			data, err := io.ReadAll(r.Body)
+			switch {
+			case err != nil:
+				msg = fmt.Sprintf("%s (failed to read response body: %v)",
+					http.StatusText(r.StatusCode), err)
+			case len(data) > 0:
 				msg = string(data)
-			} else {
+			default:
 				msg = http.StatusText(r.StatusCode)
 			}
 
@@ -582,7 +579,7 @@ func checkResponseError(r *http.Response) error {
 		retryAfter, err = strconv.Atoi(secs)
 		if err != nil {
 			if t, err := parseHTTPTime(secs); err == nil {
-				retryAfter = int(t.Sub(time.Now()).Seconds())
+				retryAfter = int(time.Until(t).Seconds())
 			}
 		}
 
@@ -636,8 +633,9 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *tls.Conn, e
 	}
 
 	tlsClientConfig := &tls.Config{
-		RootCAs:            rootCAs,
-		Certificates:       tlsCerts,
+		RootCAs:      rootCAs,
+		Certificates: tlsCerts,
+		//nolint:gosec // G402: the caller opts in to fetch /cacerts for out-of-band verification, as the field documents.
 		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 

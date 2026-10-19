@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-est.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-est)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/go.yml)
+[![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml)
 
 Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
 defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
@@ -162,10 +162,17 @@ fields hand decisions to the host:
 * `CheckBasicAuth` checks every enrollment request, also one without a password, so the host can
   accept a client certificate instead. It can answer 401, 403 or 429 with `Retry-After`.
 * `CheckCSRSignature` verifies CSR signatures that `crypto/x509` cannot, such as composite ML-DSA.
+* `VerifyClientCertificate` checks the client certificate of a renewal in place of the check
+  against `/cacerts`, for certificates `crypto/x509` cannot verify, such as those an SLH-DSA CA
+  signed. The Subject and SubjectAltName comparison still runs first.
 * `Refusals` reports requests refused before they reach the CA, for audit records or rate limits.
 * `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
   RFC 7030 section 2.3 allows. It is off by default.
 * `OmitTransferEncoding` drops the `Content-Transfer-Encoding` header for clients that reject it.
+* `OmitStrictTransportSecurity` drops the `Strict-Transport-Security` header, so the host can send
+  its own value or none.
+* `MaxRequestBody` raises the 64 KiB request limit for CSRs of large post-quantum keys. An
+  SLH-DSA-SHA2-256f CSR is about 67 KB in base64.
 
 **TLS-SRP** (RFC 5054) signs a client in with a username and password during the TLS handshake,
 as libest does with `--srp`. A host that terminates TLS-SRP passes the username to the router with
@@ -185,6 +192,13 @@ and in `estclient`. The tests use ML-DSA-65. Limits:
   TLS library presents a composite client certificate, so composite certificates renew with
   `PasswordRenewal` or TLS-SRP.
 * **ML-KEM** keys cannot sign a CSR, so they can only come from `/serverkeygen`.
+* **SLH-DSA** (FIPS 205, RFC 9909) requests need `CheckCSRSignature`, and the client cannot
+  create them. The SHA2-256f and SHAKE-256f sets also need a larger `MaxRequestBody`. TLS has no
+  standard signature scheme for SLH-DSA keys, so these certificates renew with `PasswordRenewal`
+  or TLS-SRP.
+* A certificate that an **SLH-DSA or composite ML-DSA CA** signed renews over TLS only with
+  `VerifyClientCertificate`, because `crypto/x509` cannot verify it. The listener must then request
+  the client certificate without verifying it, with `tls.RequestClientCert`.
 
 ## Credits
 

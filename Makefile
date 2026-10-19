@@ -19,17 +19,26 @@ help: ## Display this help.
 
 .PHONY: fmt-check
 fmt-check: ## Fail when a tracked Go file is not gofmt formatted.
-	@unformatted=$$(gofmt -l $$(git ls-files '*.go')); \
+	@files=$$(git ls-files '*.go'); \
+	if [ -z "$$files" ]; then echo "no Go files are tracked"; exit 1; fi; \
+	unformatted=$$(gofmt -l $$files); \
 	if [ -n "$$unformatted" ]; then echo "not gofmt formatted:"; echo "$$unformatted"; exit 1; fi
 
 .PHONY: vet
 vet: ## Run go vet.
 	go vet ./...
 
+.PHONY: tidy-check
+tidy-check: ## Fail when go.mod or go.sum is not tidy.
+	go mod tidy -diff
+
 # Without a SoftHSM token or a TPM, set GLOBALSIGN_EST_SKIP=hsm,tpm to skip those tests.
+# TESTFLAGS adds go test flags, for example TESTFLAGS=-v to list skipped tests.
+TESTFLAGS ?=
+
 .PHONY: test
 test: vet ## Run the tests under the race detector.
-	go test -race -count=1 ./...
+	go test -race -count=1 $(TESTFLAGS) ./...
 
 ##@ Release
 
@@ -50,22 +59,26 @@ require-version:
 
 # A go.work above the checkout or the check directory would replace the module's own requirements.
 release-check sbom: export GOWORK = off
+# The export step sets -e itself because make 3.81, the macOS default, ignores .SHELLFLAGS. Its steps
+# are separate commands because -e does not stop at a failure inside an && list.
 .PHONY: release-check
 release-check: ## Build, vet and test an export of HEAD and import it from a separate module. Set VERSION to check the changelog heading.
 	@if grep -q '^replace ' go.mod; then echo "error: go.mod has a replace directive"; exit 1; fi
 	@if [ -n "$(VERSION)" ]; then \
 		version="$(VERSION)"; version="$${version#v}"; \
 		grep -q "^## \[$$version\] - " CHANGELOG.md || { echo "error: CHANGELOG.md has no heading for $$version"; exit 1; }; \
+		if grep -q "^## \[$$version\] - TBD" CHANGELOG.md; then echo "error: CHANGELOG.md still dates $$version TBD"; exit 1; fi; \
 		if grep -qi '^## \[Unreleased' CHANGELOG.md; then echo "error: CHANGELOG.md still has an Unreleased section"; exit 1; fi; \
+		grep -Eq "estVersion += \"$(VERSION)\"" client.go || { echo "error: estVersion in client.go is not $(VERSION)"; exit 1; }; \
 	fi
-	@check="$(RELEASE_CHECK_DIR)"; \
+	@set -e; check="$(RELEASE_CHECK_DIR)"; \
 	if [ -e "$$check" ]; then echo "error: $$check exists, move it aside first"; exit 1; fi; \
 	mkdir -p "$$check/export" "$$check/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$check/export"; \
-	cd "$$check/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
-	cd "$$check/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-est v0.0.0\n\nreplace github.com/misiektoja/go-pki-est => ../export\n' "$(GO_VERSION)" > go.mod; \
+	cd "$$check/export"; go mod verify; go build ./...; go vet ./...; go test -count=1 ./...; \
+	cd "$$check/consumer"; printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-est v0.0.0\n\nreplace github.com/misiektoja/go-pki-est => ../export\n' "$(GO_VERSION)" > go.mod; \
 	printf 'package main\n\nimport (\n\t"log"\n\n\test "github.com/misiektoja/go-pki-est"\n)\n\nfunc main() {\n\t_, err := est.NewRouter(&est.ServerConfig{})\n\tlog.Println(err)\n}\n' > main.go; \
-	go mod tidy && go build ./... && go run .; \
+	go mod tidy; go build ./...; go run .; \
 	echo "release check passed for $$(git -C "$(CURDIR)" rev-parse --short HEAD)"
 
 .PHONY: release-body
@@ -92,6 +105,26 @@ release-checksums: release-source-archives ## Write SHA-256 checksums for the so
 	@test -f "$(SBOM_FILE)" || { echo "Run sbom with the same VERSION first, $(SBOM_FILE) is missing" >&2; exit 1; }
 	cd dist && shasum -a 256 "$(notdir $(SBOM_FILE))" "$(notdir $(SOURCE_ZIP))" "$(notdir $(SOURCE_TAR_GZ))" | tee "$(notdir $(RELEASE_CHECKSUMS))"
 
+##@ Checks
+
+.PHONY: lint
+lint: golangci-lint ## Run golangci-lint.
+	"$(GOLANGCI_LINT)" run
+
+.PHONY: lint-config
+lint-config: golangci-lint ## Verify the golangci-lint configuration.
+	"$(GOLANGCI_LINT)" config verify
+
+.PHONY: actionlint
+actionlint: actionlint-tool ## Lint the GitHub Actions workflows.
+	"$(ACTIONLINT)"
+
+# govulncheck fails only on vulnerabilities that the module's code can reach. It lists advisories for
+# required modules whose vulnerable code is never called without failing.
+.PHONY: govulncheck
+govulncheck: govulncheck-tool ## Report known vulnerabilities that reach the module or its dependencies.
+	"$(GOVULNCHECK)" ./...
+
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -100,10 +133,28 @@ $(LOCALBIN):
 	mkdir -p "$(LOCALBIN)"
 
 ## Tool Binaries
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck
+ACTIONLINT ?= $(LOCALBIN)/actionlint
 CYCLONEDX_GOMOD ?= $(LOCALBIN)/cyclonedx-gomod
 
 ## Tool Versions
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GOVULNCHECK_VERSION ?= v1.7.0
+ACTIONLINT_VERSION ?= v1.7.12
 CYCLONEDX_GOMOD_VERSION ?= v1.11.0
+
+.PHONY: golangci-lint
+golangci-lint: | $(LOCALBIN) ## Download golangci-lint locally if necessary.
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: govulncheck-tool
+govulncheck-tool: | $(LOCALBIN) ## Download govulncheck locally if necessary.
+	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: actionlint-tool
+actionlint-tool: | $(LOCALBIN) ## Download actionlint locally if necessary.
+	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 .PHONY: cyclonedx-gomod
 cyclonedx-gomod: | $(LOCALBIN) ## Download cyclonedx-gomod locally if necessary.

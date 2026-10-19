@@ -20,18 +20,26 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash"
+	"math"
 )
 
-// KDFa implements the KDFa function per the TPM2.0 specification.
+// KDFa implements the KDFa function per the TPM2.0 specification. The output
+// length is encoded in bits as a 32-bit value, which limits numbytes to
+// math.MaxUint32/8.
 func KDFa(h func() hash.Hash, key []byte, label string, context []byte, numbytes int) ([]byte, error) {
+	if numbytes < 0 || numbytes > math.MaxUint32/8 {
+		return nil, errors.New("numbytes out of range")
+	}
+	l := uint32(numbytes)
+
 	var fixed = append([]byte(label), 0x00)
 	fixed = append(fixed, context...)
 
 	var lcount = make([]byte, 4)
-	binary.BigEndian.PutUint32(lcount, uint32(numbytes)*8)
+	binary.BigEndian.PutUint32(lcount, l*8)
 	fixed = append(fixed, lcount...)
 
-	return kdfCounter(h, key, nil, fixed, uint32(numbytes), 4)
+	return kdfCounter(h, key, nil, fixed, l, 4)
 }
 
 // kdfCounter implements a key derivation function in counter mode, as defined
@@ -45,28 +53,27 @@ func kdfCounter(h func() hash.Hash, key, before, after []byte, l, r uint32) ([]b
 		return nil, errors.New("r must be 1, 2, 3 or 4 bytes")
 	}
 
-	// Calculate number of iterations required.
-	var hashSize = uint32(h().Size())
-	var n = l / hashSize
-	if l%hashSize != 0 {
-		n++
-	}
+	// Calculate number of iterations required. Hash sizes are positive.
+	// max keeps the conversion and the division safe.
+	var hashSize = uint64(max(h().Size(), 1))
+	var n = (uint64(l) + hashSize - 1) / hashSize
 
 	// Number of iterations shall not exceed (2^r)-1, per SP800-108 section 5.
-	// Since this function accepts L and r in bytes, we multiply r by 8.
-	if uint64(n) > ((2 ^ uint64(r)*8) - 1) {
+	// Since this function accepts r in bytes, we multiply r by 8.
+	if n > (uint64(1)<<(8*r))-1 {
 		return nil, errors.New("l too large")
 	}
 
-	// Perform PRF iterations.
+	// Perform PRF iterations. The counter is written as the last r bytes of
+	// a 64-bit big-endian value, which the bound above keeps in range.
 	var out = make([]byte, 0, n*hashSize)
-	var cbuf = make([]byte, 4)
-	for c := uint32(1); c <= uint32(n); c++ {
-		binary.BigEndian.PutUint32(cbuf, c)
+	var cbuf = make([]byte, 8)
+	for c := uint64(1); c <= n; c++ {
+		binary.BigEndian.PutUint64(cbuf, c)
 
 		var mac = hmac.New(h, key)
 		mac.Write(before)
-		mac.Write(cbuf[4-r : 4])
+		mac.Write(cbuf[8-r:])
 		mac.Write(after)
 
 		out = append(out, mac.Sum(nil)...)

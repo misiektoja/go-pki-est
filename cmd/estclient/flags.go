@@ -49,8 +49,9 @@ type option struct {
 const (
 	appName        = "estclient"
 	defaultTimeout = time.Second * 15
+	noneLabel      = "none"
 	sepChar        = ","
-	versionString  = "1.1.0"
+	versionString  = "1.2.0"
 )
 
 // Flag name constants.
@@ -127,13 +128,13 @@ var csrFlags = []string{
 var optDefs = map[string]option{
 	apsFlag: {
 		argFmt:       stringFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		defaultValue: "",
 		desc:         "optional additional path segment",
 	},
 	certsFlag: {
 		argFmt:       pathFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "TLS client certificate(s)",
 		defaultValue: "",
 	},
@@ -143,7 +144,7 @@ var optDefs = map[string]option{
 	},
 	configFlag: {
 		argFmt:       pathFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "configuration file",
 		defaultValue: "",
 	},
@@ -159,13 +160,13 @@ var optDefs = map[string]option{
 	},
 	explicitAnchorFlag: {
 		argFmt:       pathFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "explicit anchor file",
 		defaultValue: "",
 	},
 	implicitAnchorFlag: {
 		argFmt:       pathFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "implicit anchor file",
 		defaultValue: "",
 	},
@@ -209,17 +210,19 @@ var optDefs = map[string]option{
 		defaultValue: "",
 	},
 	separateOutFlag: {
-		desc:         fmt.Sprintf("write every CA certificate to a separate file with optional prefix specified by -%s", outFlag),
+		desc: fmt.Sprintf("write every CA certificate to a separate file with optional prefix specified by -%s",
+			outFlag),
 		defaultValue: false,
 	},
 	passwordFlag: {
 		argFmt:       stringFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "HTTP Basic Auth password",
 		defaultValue: "",
 	},
 	rootOutFlag: {
-		desc:         fmt.Sprintf("output the first root CA certificate only; this flag will be deprecated in favor of -%s, which is preferred", rootsOnlyFlag),
+		desc: fmt.Sprintf("output the first root CA certificate only; this flag will be deprecated in favor of -%s, "+
+			"which is preferred", rootsOnlyFlag),
 		defaultValue: false,
 	},
 	rootsOnlyFlag: {
@@ -248,7 +251,7 @@ var optDefs = map[string]option{
 	},
 	usernameFlag: {
 		argFmt:       stringFmt,
-		defaultLabel: "none",
+		defaultLabel: noneLabel,
 		desc:         "HTTP Basic Auth username",
 		defaultValue: "",
 	},

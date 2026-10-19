@@ -72,50 +72,48 @@ func ordinal(n int) string {
 }
 
 // decodeMultipartRequest decodes base64 multipart data into the supplied parts.
-func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error) {
+func decodeMultipartRequest(r *http.Request, parts []multipartPart) error {
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get(contentTypeHeader))
 	if err != nil {
-		return 0, &estError{
+		return &estError{
 			status: http.StatusUnsupportedMediaType,
 			desc:   fmt.Sprintf("malformed or missing %s header", contentTypeHeader),
 		}
 	}
 	if !strings.HasPrefix(mediaType, mimeTypeMultipart) {
-		return 0, &estError{
+		return &estError{
 			status: http.StatusUnsupportedMediaType,
 			desc:   fmt.Sprintf("%s must be %s", contentTypeHeader, mimeTypeMultipart),
 		}
 	}
 
-	var numParts = 0
 	mpr := multipart.NewReader(r.Body, params[mimeParamBoundary])
 
 	for i, part := range parts {
 		p, err := mpr.NextRawPart()
 		if err == io.EOF {
-			return 0, &estError{
+			return &estError{
 				status: http.StatusBadRequest,
 				desc:   fmt.Sprintf("expected %d parts in request body, got %d", len(parts), i),
 			}
 		} else if err != nil {
-			var maxErr *http.MaxBytesError
-			if errors.As(err, &maxErr) {
-				return 0, errBodyTooLarge
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				return errBodyTooLarge
 			}
 
-			return 0, errBodyParse
+			return errBodyParse
 		}
-		defer p.Close()
+		defer func() { _ = p.Close() }()
 
 		if err := verifyPartType(p, part.contentType, ordinal(i+1)); err != nil {
-			return 0, err
+			return err
 		}
 
 		switch t := part.data.(type) {
 		case **x509.CertificateRequest:
 			csr, err := readCSRRequest(p, csrCheckFromContext(r.Context()))
 			if err != nil {
-				return 0, err
+				return err
 			}
 
 			*t = csr
@@ -123,7 +121,7 @@ func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error)
 		case *[]*x509.Certificate:
 			certs, err := readCertsRequest(p)
 			if err != nil {
-				return 0, err
+				return err
 			}
 
 			*t = certs
@@ -131,19 +129,17 @@ func decodeMultipartRequest(r *http.Request, parts []multipartPart) (int, error)
 		case *[]byte:
 			pub, err := readTPMPublicAreaRequest(p)
 			if err != nil {
-				return 0, err
+				return err
 			}
 
 			*t = pub
 
 		default:
-			return 0, errInternal
+			return errInternal
 		}
-
-		numParts++
 	}
 
-	return numParts, nil
+	return nil
 }
 
 // encodeMultiPart base64 encodes each part into a multipart body. If
@@ -240,10 +236,10 @@ func verifyPartType(part *multipart.Part, ct, pos string) error {
 	return nil
 }
 
-// verifyResponseType verifies if the content-type and content-transfer-encoding
-// of an HTTP response are as expected. It returns a normal error and is intended
-// to be used by client code.
-func verifyResponseType(r *http.Response, t, e string) error {
+// verifyResponseType verifies if the content-type of an HTTP response is as
+// expected. It ignores Content-Transfer-Encoding, following RFC 8951. It
+// returns a normal error and is intended to be used by client code.
+func verifyResponseType(r *http.Response, t string) error {
 	ctype, _, err := mime.ParseMediaType(r.Header.Get(contentTypeHeader))
 	if err != nil {
 		return fmt.Errorf("missing or malformed %s header: %w", contentTypeHeader, err)
@@ -256,10 +252,10 @@ func verifyResponseType(r *http.Response, t, e string) error {
 	return nil
 }
 
-// verifyPartTypeResponse verifies if the content-type and content-transfer-encoding
-// of a multipart response part are as expected. It returns a normal error and
-// is intended to be used by client code.
-func verifyPartTypeResponse(part *multipart.Part, t, e string) error {
+// verifyPartTypeResponse verifies if the content-type of a multipart response
+// part is as expected. It ignores Content-Transfer-Encoding, following RFC 8951.
+// It returns a normal error and is intended to be used by client code.
+func verifyPartTypeResponse(part *multipart.Part, t string) error {
 	ctype, _, err := mime.ParseMediaType(part.Header.Get(contentTypeHeader))
 	if err != nil {
 		return fmt.Errorf("missing or malformed %s header: %w", contentTypeHeader, err)
@@ -331,5 +327,6 @@ func writeResponse(ctx context.Context, w http.ResponseWriter, contentType strin
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write(body)
+	//nolint:gosec // G705: every caller sets a non-HTML Content-Type and addSecureHeaders sets nosniff.
+	_, _ = w.Write(body)
 }

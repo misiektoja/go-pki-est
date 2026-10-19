@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"reflect"
 
@@ -85,7 +84,7 @@ func decodePKCS7CertsOnly(b []byte) ([]*x509.Certificate, error) {
 // readAllBase64Response reads all data from a reader and base64-decodes it.
 // It returns a normal error and is intended to be used from client code.
 func readAllBase64Response(r io.Reader) ([]byte, error) {
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HTTP response body: %w", err)
 	}
@@ -160,10 +159,9 @@ func readCSRAttrsResponse(r io.Reader) (CSRAttrs, error) {
 // It returns an error implementing Error and is intended to be used by server
 // code.
 func readAllBase64Request(r io.Reader) ([]byte, error) {
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return nil, errBodyTooLarge
 		}
 
