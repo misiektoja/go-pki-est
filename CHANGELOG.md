@@ -6,7 +6,7 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.2.0] - TBD
 
 The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
-client certificate of a renewal itself.
+client certificate of a renewal itself. The client no longer panics on a truncated error response.
 
 ### Added
 - **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
@@ -17,6 +17,15 @@ client certificate of a renewal itself.
   It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
   ML-DSA CA signed. The TLS listener must then request the certificate without verifying it, for
   example with `tls.RequestClientCert`. Without the hook, renewal behaves as before.
+
+### Fixed
+- **Truncated error responses.** When the body of an error response ends early, client calls
+  return an `est.Error` with the HTTP status and `Retry-After` value instead of a bare read
+  error. `CSRAttrs` no longer panics in that case.
+- **`estclient` TPM handles.** A `persistent_handle` or `storage_handle` that does not fit in 32
+  bits is refused. It was truncated to a different handle before.
+- **`estserver` request headers** must arrive within 30 seconds, as on the TLS-SRP port. A client
+  that never finishes its headers no longer holds a connection open.
 
 ## [1.1.0] - 2026-10-19
 
