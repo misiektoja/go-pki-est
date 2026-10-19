@@ -110,6 +110,12 @@ type ServerConfig struct {
 	// present.
 	OmitTransferEncoding bool
 
+	// OmitStrictTransportSecurity leaves the Strict-Transport-Security header
+	// out of responses, so the host can send its own value or none. A browser
+	// that has stored the header refuses certificate warnings for the host
+	// name on every port. It defaults to false, which sends max-age=31536000.
+	OmitStrictTransportSecurity bool
+
 	// MaxRequestBody bounds the size of a request body in bytes. Larger
 	// requests are refused with 413. If zero, 64 KiB is used. A CSR for a
 	// large post-quantum key can exceed that, such as an SLH-DSA-SHA2-256f
@@ -289,7 +295,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	r.Use(middleware.WithValue(ctxKeyPasswordRenewal, cfg.PasswordRenewal))
 	r.Use(middleware.WithValue(ctxKeyClientCertCheck, cfg.VerifyClientCertificate))
 	r.Use(addServerHeader)
-	r.Use(addSecureHeaders)
+	r.Use(addSecureHeaders(cfg.OmitStrictTransportSecurity))
 	if len(cfg.AllowedHosts) > 0 {
 		r.Use(verifyAllowedHosts(cfg.AllowedHosts))
 	}
@@ -797,17 +803,22 @@ func addServerHeader(next http.Handler) http.Handler {
 	})
 }
 
-// addSecureHeaders is middleware which writes to an HTTP response a selection
-// of secure HTTP headers as described by the OWASP Secure Headers Project. See
-// https://owasp.org/www-project-secure-headers/. Many of these headers are of
-// only limited use to us, since our intended clients are not browsers, but
-// some may be useful for some clients.
-func addSecureHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(strictTransportHeader, "max-age=31536000")
-		w.Header().Set(contentTypeOptionsHeader, "nosniff")
-		next.ServeHTTP(w, r)
-	})
+// addSecureHeaders returns middleware which writes to an HTTP response a
+// selection of secure HTTP headers as described by the OWASP Secure Headers
+// Project. See https://owasp.org/www-project-secure-headers/. Many of these
+// headers are of only limited use to us, since our intended clients are not
+// browsers, but some may be useful for some clients. omitHSTS leaves out
+// Strict-Transport-Security.
+func addSecureHeaders(omitHSTS bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !omitHSTS {
+				w.Header().Set(strictTransportHeader, "max-age=31536000")
+			}
+			w.Header().Set(contentTypeOptionsHeader, "nosniff")
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // trustProxyAddress is middleware which sets the request's RemoteAddr from the
