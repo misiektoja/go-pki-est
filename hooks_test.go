@@ -538,6 +538,43 @@ func TestBase64Whitespace(t *testing.T) {
 	}
 }
 
+// Applies the 64 KiB default request limit and the limit MaxRequestBody sets.
+func TestMaxRequestBody(t *testing.T) {
+	t.Parallel()
+
+	// Whitespace pads a valid request past 64 KiB, as a large post-quantum CSR would be.
+	body := append(mustMakeBase64CSR(t, "Device"), bytes.Repeat([]byte("\r\n"), 40<<10)...)
+	tests := []struct {
+		name   string
+		limit  int64
+		status int
+	}{
+		{"Default", 0, http.StatusRequestEntityTooLarge},
+		{"Raised", 128 << 10, http.StatusOK},
+		{"Exact", int64(len(body)), http.StatusOK},
+		{"OneShort", int64(len(body)) - 1, http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newHookRouter(t, est.ServerConfig{MaxRequestBody: tc.limit})
+			w := serve(h, http.MethodPost, enrollEndpoint, mimeTypePKCS10, body)
+			if w.Code != tc.status {
+				t.Fatalf("got status %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+		})
+	}
+
+	ca, err := mockca.NewTransient()
+	if err != nil {
+		t.Fatalf("failed to create mock CA: %v", err)
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: ca, MaxRequestBody: -1}); err == nil {
+		t.Fatal("negative MaxRequestBody accepted")
+	}
+}
+
 // oneAsymmetricKey is the PKCS#8 structure used to build keys crypto/x509 cannot parse.
 type oneAsymmetricKey struct {
 	Version    int
