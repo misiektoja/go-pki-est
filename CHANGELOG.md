@@ -6,8 +6,8 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.2.0] - TBD
 
 The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
-client certificate of a renewal itself. The server router moves to chi v5. The client no longer
-panics on a truncated error response.
+client certificate of a renewal itself and choose whether the server sends HSTS. The server router
+moves to chi v5. The client no longer panics on a truncated error response.
 
 ### Added
 - **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
@@ -18,6 +18,9 @@ panics on a truncated error response.
   It renews certificates that `crypto/x509` cannot verify, such as those an SLH-DSA or composite
   ML-DSA CA signed. The TLS listener must then request the certificate without verifying it, for
   example with `tls.RequestClientCert`. Without the hook, renewal behaves as before.
+- **`ServerConfig.OmitStrictTransportSecurity`** leaves the `Strict-Transport-Security` header out
+  of responses, so the host can send its own value or none. By default the server still sends
+  `max-age=31536000`.
 
 ### Changed
 - **chi v5.** The server router uses `github.com/go-chi/chi/v5` v5.5.0 instead of chi v4.1.2.
