@@ -174,9 +174,8 @@ func (c *Client) CSRAttrs(ctx context.Context) (CSRAttrs, error) {
 		// it desires in a client certification request. Therefore we do not
 		// treat these two response codes as errors, and we just return an
 		// empty CSR attributes object.
-		var estErr Error
-		if errors.As(err, &estErr); estErr.StatusCode() == http.StatusNotFound ||
-			estErr.StatusCode() == http.StatusNoContent {
+		if estErr, ok := errors.AsType[Error](err); ok && (estErr.StatusCode() == http.StatusNotFound ||
+			estErr.StatusCode() == http.StatusNoContent) {
 			return CSRAttrs{}, nil
 		}
 
@@ -532,7 +531,8 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 // checkResponseError returns nil if the HTTP response status code is 200 OK,
 // otherwise it returns an error object implementing est.Error. In order to
 // parse the Retry-After header and return a value, note that 202 Accepted
-// is treated as an error for this purpose.
+// is treated as an error for this purpose. A body that cannot be read still
+// yields an est.Error with the response status, so callers can act on it.
 func checkResponseError(r *http.Response) error {
 	if r.StatusCode == http.StatusOK {
 		return nil
@@ -555,13 +555,13 @@ func checkResponseError(r *http.Response) error {
 		switch mediaType {
 		case "", mimeTypeTextPlain, mimeTypeJSON, mimeTypeProblemJSON:
 			data, err := io.ReadAll(r.Body)
-			if err != nil {
-				return err
-			}
-
-			if len(data) > 0 {
+			switch {
+			case err != nil:
+				msg = fmt.Sprintf("%s (failed to read response body: %v)",
+					http.StatusText(r.StatusCode), err)
+			case len(data) > 0:
 				msg = string(data)
-			} else {
+			default:
 				msg = http.StatusText(r.StatusCode)
 			}
 
