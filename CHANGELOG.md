@@ -3,6 +3,15 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.2.0] - TBD
+
+The request size limit can be raised for CSRs of large post-quantum keys.
+
+### Added
+- **`ServerConfig.MaxRequestBody`** sets the request size limit in bytes. Larger requests get 413.
+  The default stays 64 KiB, which refuses CSRs of the largest SLH-DSA keys, such as
+  SLH-DSA-SHA2-256f at about 67 KB in base64. `NewRouter` refuses a negative value.
+
 ## [1.1.0] - 2026-10-19
 
 First release of go-pki-est, a separately maintained fork of globalsign/est v1.0.7 under a new
