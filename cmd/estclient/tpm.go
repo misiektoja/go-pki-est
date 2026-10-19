@@ -40,6 +40,7 @@ var (
 	errNoTPMEK                 = errors.New("no endorsement key in configuration file")
 	errNoTPMSK                 = errors.New("no storage key in configuration file")
 	errNoTPMHandleOrPublicArea = errors.New("no key handle or public/private areas in configuration file")
+	errInvalidHandle           = errors.New("invalid handle value")
 )
 
 // tpmenroll requests a new certificate.
@@ -341,15 +342,16 @@ func readPublicAreaFromTPM(cfg *config, handle tpmutil.Handle) ([]byte, error) {
 }
 
 // toHandle converts a *big.Int to a (unsigned 32-bit) TPM handle. An error
-// is returned if the integer cannot be represented as a TPM handle.
+// wrapping errInvalidHandle is returned if the integer cannot be represented
+// as a TPM handle.
 func toHandle(n *big.Int) (tpmutil.Handle, error) {
 	if !n.IsUint64() {
-		return 0, fmt.Errorf("invalid handle value: %v", n)
+		return 0, fmt.Errorf("%w: %v", errInvalidHandle, n)
 	}
 
 	v := n.Uint64()
 	if v > math.MaxUint32 {
-		return 0, fmt.Errorf("invalid handle value: %v", n)
+		return 0, fmt.Errorf("%w: %v", errInvalidHandle, n)
 	}
 
 	return tpmutil.Handle(v), nil

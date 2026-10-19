@@ -354,19 +354,29 @@ func (k *hsmKey) Get(baseDir string) (key interface{}, closeFunc func() error, e
 	return key, closeFunc, err
 }
 
-// Get returns a private key and a close function.
+// Get returns a private key and a close function. A persistent or storage
+// handle outside the unsigned 32-bit range is refused before the TPM is opened.
 func (k *tpmKey) Get(baseDir string) (interface{}, func() error, error) {
 	var key interface{}
-	var err error
 
 	switch {
 	case k.Persistent != nil:
-		key, err = tpmkeys.NewFromPersistentHandle(k.Device, uint32(k.Persistent.Uint64()), k.KeyPass)
+		handle, err := toHandle(k.Persistent)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read persistent handle: %w", err)
+		}
+
+		key, err = tpmkeys.NewFromPersistentHandle(k.Device, uint32(handle), k.KeyPass)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get private key: %w", err)
 		}
 
 	case k.Storage != nil:
+		storage, err := toHandle(k.Storage)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read storage handle: %w", err)
+		}
+
 		pub, err := os.ReadFile(fullPath(baseDir, k.Public))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read public area: %w", err)
@@ -377,7 +387,7 @@ func (k *tpmKey) Get(baseDir string) (interface{}, func() error, error) {
 			return nil, nil, fmt.Errorf("failed to read private area: %w", err)
 		}
 
-		key, err = tpmkeys.NewFromBlobs(k.Device, uint32(k.Storage.Uint64()), k.StoragePass,
+		key, err = tpmkeys.NewFromBlobs(k.Device, uint32(storage), k.StoragePass,
 			pub, priv, k.KeyPass)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get private key: %w", err)
