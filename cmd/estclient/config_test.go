@@ -30,6 +30,7 @@ import (
 	"flag"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -278,6 +279,58 @@ func TestHSMKeyNoKeyID(t *testing.T) {
 	k := hsmKey{LibraryPath: "/nonexistent/libpkcs11.so", PIN: "1234"}
 	if _, _, err := k.Get(""); !errors.Is(err, errNoHSMKeyID) {
 		t.Fatalf("got error %v, want %v", err, errNoHSMKeyID)
+	}
+}
+
+// TestTPMKeyHandleRange checks that a TPM key refuses persistent and storage
+// handles that do not fit in 32 bits instead of truncating them.
+func TestTPMKeyHandleRange(t *testing.T) {
+	t.Parallel()
+
+	// The low 32 bits of the oversized handle are a valid persistent handle.
+	oversized := new(big.Int).Add(new(big.Int).Lsh(big.NewInt(1), 32), big.NewInt(0x81000001))
+	negative := big.NewInt(-0x81000001)
+
+	var testcases = []struct {
+		name string
+		key  tpmKey
+	}{
+		{
+			name: "PersistentOversized",
+			key:  tpmKey{Persistent: oversized},
+		},
+		{
+			name: "PersistentNegative",
+			key:  tpmKey{Persistent: negative},
+		},
+		{
+			name: "StorageOversized",
+			key:  tpmKey{Storage: oversized, Public: "key.pub", Private: "key.priv"},
+		},
+		{
+			name: "StorageNegative",
+			key:  tpmKey{Storage: negative, Public: "key.pub", Private: "key.priv"},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			for _, name := range []string{"key.pub", "key.priv"} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("area"), 0600); err != nil {
+					t.Fatalf("failed to write key area: %v", err)
+				}
+			}
+
+			// The device does not exist, so any attempt to open it fails
+			// with a different error.
+			tc.key.Device = filepath.Join(dir, "tpm")
+			if _, _, err := tc.key.Get(dir); !errors.Is(err, errInvalidHandle) {
+				t.Fatalf("got error %v, want %v", err, errInvalidHandle)
+			}
+		})
 	}
 }
 
