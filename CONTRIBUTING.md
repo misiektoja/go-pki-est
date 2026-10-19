@@ -34,7 +34,7 @@ The module uses semantic versioning. Versions before v1.0.0 may change the API i
 
 ## Releases
 
-[CHANGELOG.md](CHANGELOG.md) has one section per version, dated on the release day. Set `estVersion` in `client.go` to the new version, because the client User-Agent and the server header report it. Before tagging, run the release check on `main`. With `VERSION` set it also refuses a mismatched `estVersion`:
+[CHANGELOG.md](CHANGELOG.md) has one section per version, dated on the release day. Set `estVersion` in `client.go` to the new version, because the client User-Agent and the server header report it. Set `versionString` in `cmd/estclient/flags.go` and `cmd/estserver/flags.go` to the same version without the `v`. The tests fail when the tools and the library report different versions. Before tagging, run the release check on `main`. With `VERSION` set it also refuses a mismatched `estVersion`:
 
 ```bash
 GLOBALSIGN_EST_SKIP=hsm,tpm VERSION=v1.1.0 make release-check
