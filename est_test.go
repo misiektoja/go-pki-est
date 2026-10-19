@@ -996,35 +996,68 @@ func TestTPMEnroll(t *testing.T) {
 	}
 }
 
-// TestTrustProxyHeaders checks the opt-in and precedence of proxy address headers.
+// TestTrustProxyHeaders checks the opt-in and precedence of proxy address
+// headers. True-Client-IP is ignored and the values are not validated.
 func TestTrustProxyHeaders(t *testing.T) {
 	t.Parallel()
 
+	const (
+		forwardedFor = "X-Forwarded-For"
+		realIP       = "X-Real-IP"
+		trueClientIP = "True-Client-IP"
+	)
+
 	var testcases = []struct {
-		name   string
-		trust  bool
-		realIP string
-		want   string
+		name    string
+		trust   bool
+		headers map[string]string
+		want    string
 	}{
 		{
-			name: "Disabled",
-			want: "192.0.2.1:1234",
+			name:    "Disabled",
+			headers: map[string]string{forwardedFor: "203.0.113.1"},
+			want:    "192.0.2.1:1234",
 		},
 		{
-			name:   "DisabledBothHeaders",
-			realIP: "203.0.113.2",
-			want:   "192.0.2.1:1234",
+			name:    "DisabledBothHeaders",
+			headers: map[string]string{forwardedFor: "203.0.113.1", realIP: "203.0.113.2"},
+			want:    "192.0.2.1:1234",
 		},
 		{
-			name:  "Enabled",
-			trust: true,
-			want:  "203.0.113.1",
+			name:    "Enabled",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1"},
+			want:    "203.0.113.1",
 		},
 		{
-			name:   "RealIPPrecedence",
-			trust:  true,
-			realIP: "203.0.113.2",
-			want:   "203.0.113.2",
+			name:    "RealIPPrecedence",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1", realIP: "203.0.113.2"},
+			want:    "203.0.113.2",
+		},
+		{
+			name:    "ForwardedForList",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1, 198.51.100.7"},
+			want:    "203.0.113.1",
+		},
+		{
+			name:    "TrueClientIPIgnored",
+			trust:   true,
+			headers: map[string]string{forwardedFor: "203.0.113.1", trueClientIP: "203.0.113.3"},
+			want:    "203.0.113.1",
+		},
+		{
+			name:    "TrueClientIPOnly",
+			trust:   true,
+			headers: map[string]string{trueClientIP: "203.0.113.3"},
+			want:    "192.0.2.1:1234",
+		},
+		{
+			name:    "NotValidated",
+			trust:   true,
+			headers: map[string]string{realIP: "proxy.example"},
+			want:    "proxy.example",
 		},
 	}
 
@@ -1046,14 +1079,66 @@ func TestTrustProxyHeaders(t *testing.T) {
 
 			// httptest.NewRequest sets RemoteAddr to 192.0.2.1:1234.
 			req := httptest.NewRequest(http.MethodGet, "/healthcheck", nil)
-			req.Header.Set("X-Forwarded-For", "203.0.113.1")
-			if tc.realIP != "" {
-				req.Header.Set("X-Real-IP", tc.realIP)
+			for name, value := range tc.headers {
+				req.Header.Set(name, value)
 			}
 			r.ServeHTTP(httptest.NewRecorder(), req)
 
 			if got != tc.want {
 				t.Fatalf("got remote address %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMethodNotAllowed checks that a 405 response lists the methods of the
+// endpoint in an Allow header, as RFC 9110 section 15.5.6 requires.
+func TestMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	r, err := est.NewRouter(&est.ServerConfig{})
+	if err != nil {
+		t.Fatalf("failed to create new router: %v", err)
+	}
+
+	var testcases = []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{
+			name:   "CACerts",
+			method: http.MethodPost,
+			path:   cacertsEndpoint,
+			want:   http.MethodGet,
+		},
+		{
+			name:   "Enroll",
+			method: http.MethodGet,
+			path:   enrollEndpoint,
+			want:   http.MethodPost,
+		},
+		{
+			name:   "CSRAttrsWithLabel",
+			method: http.MethodDelete,
+			path:   "/.well-known/est/label/csrattrs",
+			want:   http.MethodGet,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("got status %d, want %d", w.Code, http.StatusMethodNotAllowed)
+			}
+			if got := w.Header().Values("Allow"); len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("got Allow %q, want %q", got, tc.want)
 			}
 		})
 	}
