@@ -179,7 +179,8 @@ as libest does with `--srp`. A host that terminates TLS-SRP passes the username 
 `WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
 `/simplereenroll` then accepts the request without a client certificate. As with
 `PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed.
-`estserver` serves TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
+`estserver` serves TLS-SRP and the client signs in with it through
+[go-tls-srp](https://github.com/misiektoja/go-tls-srp).
 
 ### Embedding the client
 
@@ -193,6 +194,11 @@ application watch and relax the client:
 * `AllowCertificateChain` accepts an enrollment response that carries the CA chain next to the
   issued certificate. RFC 7030 section 4.2.3 allows only the issued certificate, so the client
   refuses such a response by default.
+* `SRPUsername` and `SRPPassword` sign in with **TLS-SRP** instead of a certificate check of the
+  server, as RFC 7030 section 3.3.3 allows. The password authenticates both sides, so the trust
+  anchors and client certificates are not used. TLS-SRP runs over TLS 1.2, so the `tls-unique`
+  challenge password works. `SRPMinGroupBits` sets the smallest SRP group the client accepts.
+  The default is 2048 bits.
 
 ### Post-quantum algorithms
 
