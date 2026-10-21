@@ -17,8 +17,8 @@ github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba h1:qJEJcuLz
 github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba/go.mod h1:EFYHy8/1y2KfgTAsx7Luu7NGhoxtuVHnNo8jE7FikKc=
 github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f h1:eVB9ELsoq5ouItQBr5Tj334bhPJG/MX+m7rTchmzVUQ=
 github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f/go.mod h1:XsNlhZGX73bx86s2hdc/FuaLm2CPZJemRLMA+WTFxgs=
-github.com/misiektoja/go-tls-srp v0.1.0 h1:gSNaW8LM2X7HiGgSYbBXCE3ZFV5FIP0ZEs1TN5D/Wp4=
-github.com/misiektoja/go-tls-srp v0.1.0/go.mod h1:yCBQAOqYTxsoMGJm8usy8vjMcGxRPFatNl2OyiCMgyI=
+github.com/misiektoja/go-tls-srp v0.2.0 h1:7iFcvHfgtHNdIwhtxomiciwE3xoC0kPCFmJ0Hm8a1Do=
+github.com/misiektoja/go-tls-srp v0.2.0/go.mod h1:yCBQAOqYTxsoMGJm8usy8vjMcGxRPFatNl2OyiCMgyI=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

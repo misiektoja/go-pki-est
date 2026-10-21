@@ -1,6 +1,6 @@
 module github.com/misiektoja/go-pki-est
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/ThalesIgnite/crypto11 v1.2.1
@@ -8,7 +8,7 @@ require (
 	github.com/globalsign/tpmkeys v1.0.4-0.20250806150134-4b00bd5e66cb
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/go-tpm v0.9.8
-	github.com/misiektoja/go-tls-srp v0.1.0
+	github.com/misiektoja/go-tls-srp v0.2.0
 	github.com/smallstep/scep v0.0.0-20250318231241-a25cabb69492
 	go.mozilla.org/pkcs7 v0.10.0
 	golang.org/x/term v0.47.0

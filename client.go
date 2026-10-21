@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	srptls "github.com/misiektoja/go-tls-srp"
 	"github.com/smallstep/scep/x509util"
 )
 
@@ -109,11 +110,53 @@ type Client struct {
 	// verified in some out-of-band manner before any further EST operations with
 	// that server are performed.
 	InsecureSkipVerify bool
+
+	// WrapTransport, if set, wraps the HTTP transport of every request. The
+	// wrapper sees each request and response, for example to record a
+	// protocol trace, and must pass every request on to the transport it
+	// wraps.
+	WrapTransport func(http.RoundTripper) http.RoundTripper
+
+	// OnConnect, if set, is called with the connection of each operation
+	// after the TLS handshake and before the request is sent. The connection
+	// is a *tls.Conn, or a *srptls.Conn with TLS-SRP. OnConnect must not read
+	// from, write to or close it.
+	OnConnect func(net.Conn)
+
+	// AllowCertificateChain accepts an enroll, reenroll or serverkeygen
+	// response that carries CA certificates besides the issued certificate.
+	// RFC 7030 section 4.2.3 allows only the issued certificate, but some
+	// servers add its chain. The client then returns the one certificate
+	// that issued none of the others.
+	AllowCertificateChain bool
+
+	// SRPUsername, if set, signs in with TLS-SRP (RFC 5054) as this user
+	// with SRPPassword, as RFC 7030 section 3.3.3 allows. The password also
+	// authenticates the server, so ExplicitAnchor, ImplicitAnchor,
+	// InsecureSkipVerify and Certificates are not used. TLS-SRP runs over
+	// TLS 1.2 only. OnConnect then receives a *srptls.Conn from
+	// github.com/misiektoja/go-tls-srp.
+	SRPUsername string
+
+	// SRPPassword is the TLS-SRP password of SRPUsername.
+	SRPPassword string
+
+	// SRPMinGroupBits is the size of the smallest SRP group the client
+	// accepts from the server. If zero, 2048 bits.
+	SRPMinGroupBits int
+}
+
+// clientConn is the connection of one operation.
+type clientConn struct {
+	net.Conn
+	// tlsUnique is the tls-unique value of the connection. It is nil for
+	// TLS 1.3, which has none.
+	tlsUnique []byte
 }
 
 // Client constants.
 const (
-	estVersion = "v1.2.0"
+	estVersion = "v1.3.0"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
 )
 
@@ -216,7 +259,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 	// CSR challenge password. It is not available with TLS 1.3.
 	// See https://pkg.go.dev/crypto/tls#ConnectionState.TLSUnique.
 	crBs := r.Raw
-	if tlsu := conn.ConnectionState().TLSUnique; tlsu != nil && c.SigningKey != nil {
+	if tlsu := conn.tlsUnique; tlsu != nil && c.SigningKey != nil {
 		crBs, err = c.addChallengePassword(r.Raw, base64.StdEncoding.EncodeToString(tlsu))
 		if err != nil {
 			return nil, err
@@ -243,7 +286,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 		return nil, err
 	}
 
-	return readCertResponse(resp.Body)
+	return readCertResponse(resp.Body, c.AllowCertificateChain)
 }
 
 // ServerKeyGen requests a new certificate and a server-generated private key.
@@ -333,7 +376,7 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 				}
 
 			case paramValueCertsOnly:
-				cert, err = readCertResponse(part)
+				cert, err = readCertResponse(part, c.AllowCertificateChain)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -616,7 +659,36 @@ func (c *Client) uri(endpoint string) string {
 
 // makeHTTPClient makes and configures an HTTP client for connecting to an
 // EST server. It also returns the TLS connection, which the caller must close.
-func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *tls.Conn, error) {
+func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn, error) {
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if c.OnConnect != nil {
+		c.OnConnect(conn.Conn)
+	}
+
+	var transport http.RoundTripper = &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return conn.Conn, nil
+		},
+		DisableKeepAlives: c.DisableKeepAlives,
+	}
+	if c.WrapTransport != nil {
+		transport = c.WrapTransport(transport)
+	}
+
+	return &http.Client{Transport: transport}, conn, nil
+}
+
+// dial connects to the EST server and completes the TLS handshake, with
+// TLS-SRP when SRPUsername is set.
+func (c *Client) dial(ctx context.Context) (*clientConn, error) {
+	if c.SRPUsername != "" {
+		return c.dialSRP(ctx)
+	}
+
 	var rootCAs *x509.CertPool
 	if c.ExplicitAnchor != nil {
 		rootCAs = c.ExplicitAnchor
@@ -642,18 +714,31 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *tls.Conn, e
 	dialer := &tls.Dialer{Config: tlsClientConfig}
 	nc, err := dialer.DialContext(ctx, tcpProtocol, c.Host)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	conn := nc.(*tls.Conn)
+	return &clientConn{Conn: conn, tlsUnique: conn.ConnectionState().TLSUnique}, nil
+}
 
-	httpc := &http.Client{
-		Transport: &http.Transport{
-			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return conn, nil
-			},
-			DisableKeepAlives: c.DisableKeepAlives,
-		},
+// dialSRP connects to the EST server and signs in with TLS-SRP.
+func (c *Client) dialSRP(ctx context.Context) (*clientConn, error) {
+	raw, err := (&net.Dialer{}).DialContext(ctx, tcpProtocol, c.Host)
+	if err != nil {
+		return nil, err
 	}
-
-	return httpc, conn, nil
+	host, _, err := net.SplitHostPort(c.Host)
+	if err != nil {
+		host = c.Host
+	}
+	conn := srptls.Client(raw, &srptls.Config{
+		Username:     c.SRPUsername,
+		Password:     c.SRPPassword,
+		ServerName:   host,
+		MinGroupBits: c.SRPMinGroupBits,
+	})
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return &clientConn{Conn: conn, tlsUnique: conn.ConnectionState().TLSUnique}, nil
 }

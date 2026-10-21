@@ -116,9 +116,11 @@ func readCertsResponse(r io.Reader) ([]*x509.Certificate, error) {
 
 // readCertResponse reads all data from a reader and decodes it as a base64
 // encoded PKCS#7 certs-only structure which is expected to contain exactly
-// one certificate. It returns a normal error and is intended to be used from
-// client code.
-func readCertResponse(r io.Reader) (*x509.Certificate, error) {
+// one certificate. With allowChain it may also hold the chain of that
+// certificate, which is then the one certificate that issued none of the
+// others. It returns a normal error and is intended to be used from client
+// code.
+func readCertResponse(r io.Reader, allowChain bool) (*x509.Certificate, error) {
 	p7, err := readAllBase64Response(r)
 	if err != nil {
 		return nil, err
@@ -129,13 +131,41 @@ func readCertResponse(r io.Reader) (*x509.Certificate, error) {
 		return nil, fmt.Errorf("failed to decode PKCS7: %w", err)
 	}
 
-	if n := len(certs); n < 1 {
+	switch n := len(certs); {
+	case n < 1:
 		return nil, errors.New("no certificate returned")
-	} else if n > 1 {
+	case n == 1:
+		return certs[0], nil
+	case !allowChain:
 		return nil, fmt.Errorf("%d certificates returned", n)
+	default:
+		return issuedCertificate(certs)
+	}
+}
+
+// issuedCertificate returns the certificate of a chain that issued none of
+// the others. Issuers are matched by name only, because crypto/x509 cannot
+// check every signature algorithm a CA may use.
+func issuedCertificate(certs []*x509.Certificate) (*x509.Certificate, error) {
+	var leaves []*x509.Certificate
+	for i, cert := range certs {
+		issuer := false
+		for j, other := range certs {
+			if i != j && bytes.Equal(other.RawIssuer, cert.RawSubject) {
+				issuer = true
+				break
+			}
+		}
+		if !issuer {
+			leaves = append(leaves, cert)
+		}
 	}
 
-	return certs[0], nil
+	if len(leaves) != 1 {
+		return nil, fmt.Errorf("%d certificates returned and %d of them issued no other", len(certs), len(leaves))
+	}
+
+	return leaves[0], nil
 }
 
 // readCSRAttrsResponse reads all data from a reader and decodes it as a base64
