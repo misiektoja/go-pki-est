@@ -156,7 +156,7 @@ type clientConn struct {
 
 // Client constants.
 const (
-	estVersion = "v1.3.0"
+	estVersion = "v1.3.1"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
 )
 
@@ -266,7 +266,9 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 		}
 	}
 
-	reqBody := io.NopCloser(bytes.NewBuffer(base64Encode(crBs)))
+	// A *bytes.Reader body lets the request carry its Content-Length. Some EST servers, such as
+	// the libest example server, cannot read a chunked body.
+	reqBody := bytes.NewReader(base64Encode(crBs))
 	req, err := c.newRequest(ctx, http.MethodPost, endpoint, mimeTypePKCS10, encodingTypeBase64, mimeTypePKCS7, reqBody)
 	if err != nil {
 		return nil, err
@@ -291,7 +293,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 
 // ServerKeyGen requests a new certificate and a server-generated private key.
 func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (*x509.Certificate, []byte, error) {
-	reqBody := io.NopCloser(bytes.NewBuffer(base64Encode(r.Raw)))
+	reqBody := bytes.NewReader(base64Encode(r.Raw))
 
 	req, err := c.newRequest(ctx, http.MethodPost, serverkeygenEndpoint,
 		mimeTypePKCS10, encodingTypeBase64, mimeTypeMultipart, reqBody)
@@ -424,10 +426,8 @@ func (c *Client) TPMEnroll(
 		return nil, nil, nil, err
 	}
 
-	reqBody := io.NopCloser(buf)
-
 	req, err := c.newRequest(ctx, http.MethodPost, tpmenrollEndpoint,
-		contentType, "", mimeTypeMultipart, reqBody)
+		contentType, "", mimeTypeMultipart, buf)
 	if err != nil {
 		return nil, nil, nil, err
 	}

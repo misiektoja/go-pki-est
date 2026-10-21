@@ -3,6 +3,17 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.3.1] - 2026-10-22
+
+The client sends the length of every request body, so it can enroll with servers that cannot
+read a chunked body, such as the Cisco libest example server.
+
+### Fixed
+- **Request bodies carry a `Content-Length`.** `Enroll`, `Reenroll`, `ServerKeyGen` and
+  `TPMEnroll` sent their bodies with `Transfer-Encoding: chunked`. Servers without chunked
+  request support, such as the libest 3.2.0 example server, answered with HTTP 400 or closed the
+  connection.
+
 ## [1.3.0] - 2026-10-21
 
 The client can sign in with TLS-SRP and gives the host more control: it can wrap the HTTP
@@ -156,6 +167,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
 [1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
 [1.2.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.2.0
 [1.1.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.1.0
