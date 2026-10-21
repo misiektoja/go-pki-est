@@ -1,6 +1,6 @@
 module github.com/misiektoja/go-pki-est
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/ThalesIgnite/crypto11 v1.2.1
