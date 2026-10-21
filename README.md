@@ -181,6 +181,19 @@ as libest does with `--srp`. A host that terminates TLS-SRP passes the username 
 `PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed.
 `estserver` serves TLS-SRP with [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
 
+### Embedding the client
+
+These [`Client`](https://pkg.go.dev/github.com/misiektoja/go-pki-est#Client) fields let an
+application watch and relax the client:
+
+* `WrapTransport` wraps the HTTP transport of every request, for example to record a protocol
+  trace with each request and response.
+* `OnConnect` receives the TLS connection of each operation after the handshake, for example to
+  show the TLS version, cipher suite and server certificate.
+* `AllowCertificateChain` accepts an enrollment response that carries the CA chain next to the
+  issued certificate. RFC 7030 section 4.2.3 allows only the issued certificate, so the client
+  refuses such a response by default.
+
 ### Post-quantum algorithms
 
 **ML-DSA** (FIPS 204, RFC 9881) works for enrollment, renewal and `/serverkeygen` in the library
