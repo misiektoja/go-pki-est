@@ -109,6 +109,24 @@ type Client struct {
 	// verified in some out-of-band manner before any further EST operations with
 	// that server are performed.
 	InsecureSkipVerify bool
+
+	// WrapTransport, if set, wraps the HTTP transport of every request. The
+	// wrapper sees each request and response, for example to record a
+	// protocol trace, and must pass every request on to the transport it
+	// wraps.
+	WrapTransport func(http.RoundTripper) http.RoundTripper
+
+	// OnConnect, if set, is called with the connection of each operation
+	// after the TLS handshake and before the request is sent. The connection
+	// is a *tls.Conn. OnConnect must not read from, write to or close it.
+	OnConnect func(net.Conn)
+
+	// AllowCertificateChain accepts an enroll, reenroll or serverkeygen
+	// response that carries CA certificates besides the issued certificate.
+	// RFC 7030 section 4.2.3 allows only the issued certificate, but some
+	// servers add its chain. The client then returns the one certificate
+	// that issued none of the others.
+	AllowCertificateChain bool
 }
 
 // Client constants.
@@ -243,7 +261,7 @@ func (c *Client) enrollCommon(ctx context.Context, r *x509.CertificateRequest, r
 		return nil, err
 	}
 
-	return readCertResponse(resp.Body)
+	return readCertResponse(resp.Body, c.AllowCertificateChain)
 }
 
 // ServerKeyGen requests a new certificate and a server-generated private key.
@@ -333,7 +351,7 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 				}
 
 			case paramValueCertsOnly:
-				cert, err = readCertResponse(part)
+				cert, err = readCertResponse(part, c.AllowCertificateChain)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -646,14 +664,19 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *tls.Conn, e
 	}
 	conn := nc.(*tls.Conn)
 
-	httpc := &http.Client{
-		Transport: &http.Transport{
-			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return conn, nil
-			},
-			DisableKeepAlives: c.DisableKeepAlives,
-		},
+	if c.OnConnect != nil {
+		c.OnConnect(conn)
 	}
 
-	return httpc, conn, nil
+	var transport http.RoundTripper = &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return conn, nil
+		},
+		DisableKeepAlives: c.DisableKeepAlives,
+	}
+	if c.WrapTransport != nil {
+		transport = c.WrapTransport(transport)
+	}
+
+	return &http.Client{Transport: transport}, conn, nil
 }
