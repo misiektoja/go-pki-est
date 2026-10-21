@@ -7,7 +7,7 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 
 The client can sign in with TLS-SRP and gives the host more control: it can wrap the HTTP
 transport, see each connection and accept an enrollment response that carries the CA chain. The
-module now needs go-tls-srp v0.2.0.
+module now needs Go 1.27.3 and go-tls-srp v0.2.0.
 
 ### Added
 - **TLS-SRP client.** `Client.SRPUsername` and `Client.SRPPassword` sign in with TLS-SRP
@@ -23,6 +23,10 @@ module now needs go-tls-srp v0.2.0.
   to the issued certificate. The client returns the certificate that issued none of the others.
   RFC 7030 section 4.2.3 allows only the issued certificate, so such a response is still refused
   by default.
+
+### Changed
+- **Go 1.27.3** or newer is required. It fixes GO-2026-6809 in `crypto/x509`, which the server
+  reaches when it verifies client certificates.
 
 ## [1.2.0] - 2026-10-20
 
