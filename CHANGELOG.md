@@ -3,6 +3,27 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.3.0] - TBD
+
+The client can sign in with TLS-SRP and gives the host more control: it can wrap the HTTP
+transport, see each connection and accept an enrollment response that carries the CA chain. The
+module now needs go-tls-srp v0.2.0.
+
+### Added
+- **TLS-SRP client.** `Client.SRPUsername` and `Client.SRPPassword` sign in with TLS-SRP
+  (RFC 7030 section 3.3.3) instead of checking a server certificate. The password authenticates
+  both sides, so the trust anchors and client certificates are not used. TLS-SRP runs over TLS
+  1.2, so the `tls-unique` challenge password works. `Client.SRPMinGroupBits` sets the smallest
+  SRP group the client accepts. The default is 2048 bits.
+- **`Client.WrapTransport`** wraps the HTTP transport of each operation, for example to log or
+  record requests and responses.
+- **`Client.OnConnect`** receives each connection after its handshake, so the host can read the
+  TLS version and the server certificates. For TLS-SRP it receives a `*srptls.Conn`.
+- **`Client.AllowCertificateChain`** accepts an enrollment response that carries the CA chain next
+  to the issued certificate. The client returns the certificate that issued none of the others.
+  RFC 7030 section 4.2.3 allows only the issued certificate, so such a response is still refused
+  by default.
+
 ## [1.2.0] - 2026-10-20
 
 The request size limit can be raised for CSRs of large post-quantum keys. The host can check the
