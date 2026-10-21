@@ -3,7 +3,7 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
-## [1.3.0] - TBD
+## [1.3.0] - 2026-10-21
 
 The client can sign in with TLS-SRP and gives the host more control: it can wrap the HTTP
 transport, see each connection and accept an enrollment response that carries the CA chain. The
@@ -152,6 +152,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
 [1.2.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.2.0
 [1.1.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.1.0
 [1.0.7]: https://github.com/globalsign/est/compare/v1.0.6...v1.0.7
