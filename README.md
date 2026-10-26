@@ -199,6 +199,11 @@ application watch and relax the client:
   anchors and client certificates are not used. TLS-SRP runs over TLS 1.2, so the `tls-unique`
   challenge password works. `SRPMinGroupBits` sets the smallest SRP group the client accepts.
   The default is 2048 bits.
+* `Proxy` chooses the proxy for the connection to the EST server, like `http.Transport.Proxy`.
+  When it is nil, the `HTTPS_PROXY` and `NO_PROXY` environment variables apply. The client
+  tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP, `OnConnect` and the
+  `tls-unique` value work as without a proxy. Credentials in the proxy URL are sent as Basic
+  `Proxy-Authorization`.
 
 ### Post-quantum algorithms
 
