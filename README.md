@@ -1,8 +1,11 @@
 # go-pki-est
 
+[![GitHub Release](https://img.shields.io/github/v/release/misiektoja/go-pki-est?style=flat-square&color=blue)](https://github.com/misiektoja/go-pki-est/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-est.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-est)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml)
+[![Supply chain](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml)
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fgo-pki-est&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/go-pki-est)
 
 Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
 defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
@@ -38,6 +41,23 @@ go install github.com/misiektoja/go-pki-est/cmd/estclient@latest
 ```bash
 go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
 ```
+
+### Verifying a release
+
+Each [GitHub release](https://github.com/misiektoja/go-pki-est/releases) carries the complete
+source tree as ZIP and tar archives, a CycloneDX SBOM, their SHA-256 checksums and a signed
+provenance bundle. Check a downloaded file against the checksums and confirm that the release
+workflow of this repository built it:
+
+```bash
+shasum -a 256 -c go-pki-est-v1.3.1_SHA256SUMS.txt
+```
+
+```bash
+gh attestation verify go-pki-est-v1.3.1-source.tar.gz --repo misiektoja/go-pki-est
+```
+
+To verify offline, add `--bundle go-pki-est-v1.3.1.intoto.jsonl`.
 
 ## Quickstart
 
@@ -253,9 +273,12 @@ records the attribution.
 
 ## Support and contributing
 
-Report vulnerabilities privately as [SECURITY.md](SECURITY.md) describes. The
-[Contributing Guide](CONTRIBUTING.md) lists the development checks. [CHANGELOG.md](CHANGELOG.md)
-records the changes in each release.
+[SUPPORT.md](SUPPORT.md) says where to ask questions and what to include in a bug report. Report
+vulnerabilities privately as [SECURITY.md](SECURITY.md) describes. The
+[Contributing Guide](CONTRIBUTING.md) lists the development checks and the
+[Code of conduct](CODE_OF_CONDUCT.md) applies to every project space.
+[CHANGELOG.md](CHANGELOG.md) records the changes in each release and
+[DEPENDENCIES.md](DEPENDENCIES.md) lists the third-party modules and their licenses.
 
 ## License
 
