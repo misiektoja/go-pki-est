@@ -175,7 +175,8 @@ fields hand decisions to the host:
 * `OmitStrictTransportSecurity` drops the `Strict-Transport-Security` header, so the host can send
   its own value or none.
 * `MaxRequestBody` raises the 64 KiB request limit for CSRs of large post-quantum keys. An
-  SLH-DSA-SHA2-256f CSR is about 67 KB in base64.
+  SLH-DSA-SHA2-256f CSR is about 67 KB in base64. Keep it below 4 MiB, because `/tpmenroll`
+  decodes a PKCS#7 part recursively and a structure nested about 10 MB deep ends the process.
 
 The additional path segment of a request may be at most 255 bytes. A longer one answers 414. The
 server keeps the CA certificates of at most 1024 segments for client certificate checks.
@@ -212,6 +213,8 @@ application watch and relax the client:
   `Proxy-Authorization`.
 * `BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as `Authorization: Bearer`
   on every request. `Username` and `Password` take precedence.
+* `MaxResponseBody` raises the 1 MiB limit on a response body, for a chain of large post-quantum
+  CA certificates.
 
 The client does not follow redirects. A 3xx answer is returned as an error with its status.
 
