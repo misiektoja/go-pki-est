@@ -186,8 +186,9 @@ server keeps the CA certificates of at most 1024 segments for client certificate
 as libest does with `--srp`. A host that terminates TLS-SRP passes the username to the router with
 `WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
 `/simplereenroll` then accepts the request without a client certificate. As with
-`PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed.
-`estserver` serves TLS-SRP and the client signs in with it through
+`PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed. It
+must choose it by the signed-in identity, not by the CSR subject. The server also leaves
+revocation checks to the CA. `estserver` serves TLS-SRP and the client signs in with it through
 [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
 
 ### Embedding the client
