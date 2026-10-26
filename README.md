@@ -204,6 +204,8 @@ application watch and relax the client:
   tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP, `OnConnect` and the
   `tls-unique` value work as without a proxy. Credentials in the proxy URL are sent as Basic
   `Proxy-Authorization`.
+* `BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as `Authorization: Bearer`
+  on every request. `Username` and `Password` take precedence.
 
 ### Post-quantum algorithms
 
