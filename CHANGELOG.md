@@ -6,7 +6,8 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.4.0] - TBD
 
 The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
-host, and signs in with a bearer token. The server checks bearer tokens with a new hook and
+host, and signs in with a bearer token. It refuses redirects that could carry its credentials to
+an `http` URL and bounds response bodies. The server checks bearer tokens with a new hook and
 bounds the CA certificate cache, which a peer could grow without limit.
 
 ### Added
@@ -25,6 +26,17 @@ bounds the CA certificate cache, which a peer could grow without limit.
   signs in with a bearer token. The configuration file takes them as `proxy` and `token`.
 
 ### Fixed
+- **The client refuses redirects.** It followed up to ten redirects and resent its Basic
+  credentials or bearer token to an `http` URL on the same host in cleartext, without the proxy
+  settings. RFC 7030 section 3.2.1 allows only redirects within the same origin and the client
+  talks to the one server it was configured with, so a 3xx answer is now returned as an error
+  with its status.
+- **Response bodies are bounded.** The client read every response whole, so a server could make
+  it allocate memory without limit. A 13 MB response of nested PKCS#7 structures ended the
+  process with a stack overflow. **`Client.MaxResponseBody`** bounds a response body, including
+  an error message and the parts of a multipart response. The default is 1 MiB. For the same
+  reason a server's `MaxRequestBody` should stay below 4 MiB, because `/tpmenroll` decodes a
+  PKCS#7 part.
 - **The CA certificate cache is bounded.** The server kept the `/cacerts` result of every
   additional path segment a client named, with no limit on their number or length. When the CA
   answers unknown segments, as the mock CA does, a peer could grow the server's memory with one
