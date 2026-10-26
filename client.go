@@ -184,7 +184,7 @@ type clientConn struct {
 
 // Client constants.
 const (
-	estVersion = "v1.3.1"
+	estVersion = "v1.4.0"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
 
 	defaultMaxResponseBody = 1 << 20
