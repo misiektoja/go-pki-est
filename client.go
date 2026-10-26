@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	srptls "github.com/misiektoja/go-tls-srp"
 	"github.com/smallstep/scep/x509util"
@@ -608,6 +609,8 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 // parse the Retry-After header and return a value, note that 202 Accepted
 // is treated as an error for this purpose. A body that cannot be read still
 // yields an est.Error with the response status, so callers can act on it.
+// Control characters in the message other than newline and tab are escaped,
+// so a server cannot send terminal escape sequences to whoever prints it.
 func checkResponseError(r *http.Response) error {
 	if r.StatusCode == http.StatusOK {
 		return nil
@@ -635,7 +638,7 @@ func checkResponseError(r *http.Response) error {
 				msg = fmt.Sprintf("%s (failed to read response body: %v)",
 					http.StatusText(r.StatusCode), err)
 			case len(data) > 0:
-				msg = string(data)
+				msg = escapeControls(string(data))
 			default:
 				msg = http.StatusText(r.StatusCode)
 			}
@@ -668,6 +671,30 @@ func checkResponseError(r *http.Response) error {
 		desc:       msg,
 		retryAfter: retryAfter,
 	}
+}
+
+// escapeControls returns s with every control character other than newline
+// and tab in the Go escape form, such as \x1b, so text a server sent can be
+// printed without acting on a terminal.
+func escapeControls(s string) string {
+	if !strings.ContainsFunc(s, isUnsafeControl) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isUnsafeControl(r) {
+			b.WriteString(fmt.Sprintf("\\x%02x", r))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isUnsafeControl reports whether r is a control character that may act on a
+// terminal: every C0 and C1 control and DEL except newline and tab.
+func isUnsafeControl(r rune) bool {
+	return unicode.IsControl(r) && r != '\n' && r != '\t'
 }
 
 // uri builds an EST URI for the specified endpoint, using the optional
