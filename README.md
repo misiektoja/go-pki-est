@@ -213,6 +213,8 @@ application watch and relax the client:
 * `BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as `Authorization: Bearer`
   on every request. `Username` and `Password` take precedence.
 
+The client does not follow redirects. A 3xx answer is returned as an error with its status.
+
 ### Post-quantum algorithms
 
 **ML-DSA** (FIPS 204, RFC 9881) works for enrollment, renewal and `/serverkeygen` in the library
