@@ -177,6 +177,9 @@ fields hand decisions to the host:
 * `MaxRequestBody` raises the 64 KiB request limit for CSRs of large post-quantum keys. An
   SLH-DSA-SHA2-256f CSR is about 67 KB in base64.
 
+The additional path segment of a request may be at most 255 bytes. A longer one answers 414. The
+server keeps the CA certificates of at most 1024 segments for client certificate checks.
+
 **TLS-SRP** (RFC 5054) signs a client in with a username and password during the TLS handshake,
 as libest does with `--srp`. A host that terminates TLS-SRP passes the username to the router with
 `WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
