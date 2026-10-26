@@ -26,15 +26,22 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	est "github.com/misiektoja/go-pki-est"
 )
 
-// checkTestPassword accepts the password xyzzy and, like a hook that also signs clients in by
-// certificate, requests without credentials.
+// checkTestPassword accepts the password xyzzy, the bearer token tok-123 and, like a hook that
+// also signs clients in by certificate, requests without credentials.
 func checkTestPassword(ctx context.Context, r *http.Request, aps, username, password string) error {
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		if token == "tok-123" {
+			return nil
+		}
+		return errors.New("wrong token")
+	}
 	if username == "" || password == "xyzzy" {
 		return nil
 	}
@@ -63,12 +70,16 @@ func TestPasswordRenewal(t *testing.T) {
 		enabled  bool
 		username string
 		password string
+		token    string
 		status   int
 	}{
 		{name: "Accepted", enabled: true, username: "device-1", password: "xyzzy", status: http.StatusOK},
 		{name: "Disabled", username: "device-1", password: "xyzzy", status: http.StatusForbidden},
 		{name: "NoCredentials", enabled: true, status: http.StatusForbidden},
 		{name: "WrongPassword", enabled: true, username: "device-1", password: "wrong", status: http.StatusUnauthorized},
+		{name: "BearerToken", enabled: true, token: "tok-123", status: http.StatusOK},
+		{name: "BearerTokenDisabled", token: "tok-123", status: http.StatusForbidden},
+		{name: "WrongToken", enabled: true, token: "wrong", status: http.StatusUnauthorized},
 	}
 
 	for _, tc := range testcases {
@@ -82,8 +93,12 @@ func TestPasswordRenewal(t *testing.T) {
 				PasswordRenewal: tc.enabled,
 			})
 
+			req := newPasswordRenewalRequest(t, "Device", tc.username, tc.password)
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
 			w := httptest.NewRecorder()
-			h.ServeHTTP(w, newPasswordRenewalRequest(t, "Device", tc.username, tc.password))
+			h.ServeHTTP(w, req)
 
 			if w.Code != tc.status {
 				t.Fatalf("got status %d, want %d: %s", w.Code, tc.status, w.Body.String())
