@@ -26,26 +26,27 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	est "github.com/misiektoja/go-pki-est"
 )
 
-// checkTestPassword accepts the password xyzzy, the bearer token tok-123 and, like a hook that
-// also signs clients in by certificate, requests without credentials.
+// checkTestPassword accepts the password xyzzy and, like a hook that also signs clients in by
+// certificate, requests without credentials.
 func checkTestPassword(ctx context.Context, r *http.Request, aps, username, password string) error {
-	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		if token == "tok-123" {
-			return nil
-		}
-		return errors.New("wrong token")
-	}
 	if username == "" || password == "xyzzy" {
 		return nil
 	}
 	return errors.New("wrong password")
+}
+
+// checkTestToken accepts the bearer token tok-123.
+func checkTestToken(ctx context.Context, r *http.Request, aps, token string) error {
+	if token == "tok-123" {
+		return nil
+	}
+	return errors.New("wrong token")
 }
 
 // newPasswordRenewalRequest returns a /simplereenroll request for cn without a client certificate.
@@ -61,25 +62,30 @@ func newPasswordRenewalRequest(t *testing.T, cn, username, password string) *htt
 }
 
 // TestPasswordRenewal checks which /simplereenroll requests without a client certificate
-// PasswordRenewal accepts.
+// PasswordRenewal accepts. A bearer token signs in only through CheckBearerToken. Without that
+// hook, CheckBasicAuth sees the request without credentials and must not unlock the renewal by
+// accepting them, as a hook that also signs clients in by certificate does.
 func TestPasswordRenewal(t *testing.T) {
 	t.Parallel()
 
 	testcases := []struct {
-		name     string
-		enabled  bool
-		username string
-		password string
-		token    string
-		status   int
+		name      string
+		enabled   bool
+		username  string
+		password  string
+		token     string
+		noTokens  bool
+		status    int
+		basicSeen bool
 	}{
-		{name: "Accepted", enabled: true, username: "device-1", password: "xyzzy", status: http.StatusOK},
-		{name: "Disabled", username: "device-1", password: "xyzzy", status: http.StatusForbidden},
-		{name: "NoCredentials", enabled: true, status: http.StatusForbidden},
-		{name: "WrongPassword", enabled: true, username: "device-1", password: "wrong", status: http.StatusUnauthorized},
+		{name: "Accepted", enabled: true, username: "device-1", password: "xyzzy", status: http.StatusOK, basicSeen: true},
+		{name: "Disabled", username: "device-1", password: "xyzzy", status: http.StatusForbidden, basicSeen: true},
+		{name: "NoCredentials", enabled: true, status: http.StatusForbidden, basicSeen: true},
+		{name: "WrongPassword", enabled: true, username: "device-1", password: "wrong", status: http.StatusUnauthorized, basicSeen: true},
 		{name: "BearerToken", enabled: true, token: "tok-123", status: http.StatusOK},
 		{name: "BearerTokenDisabled", token: "tok-123", status: http.StatusForbidden},
 		{name: "WrongToken", enabled: true, token: "wrong", status: http.StatusUnauthorized},
+		{name: "BearerTokenUnchecked", enabled: true, token: "tok-123", noTokens: true, status: http.StatusForbidden, basicSeen: true},
 	}
 
 	for _, tc := range testcases {
@@ -87,11 +93,20 @@ func TestPasswordRenewal(t *testing.T) {
 			t.Parallel()
 
 			ca := newRenewalCA(t)
-			h := newHookRouter(t, est.ServerConfig{
-				CA:              ca,
-				CheckBasicAuth:  checkTestPassword,
+			var basicSeen bool
+			var gotUser, gotPassword string
+			cfg := est.ServerConfig{
+				CA: ca,
+				CheckBasicAuth: func(ctx context.Context, r *http.Request, aps, username, password string) error {
+					basicSeen, gotUser, gotPassword = true, username, password
+					return checkTestPassword(ctx, r, aps, username, password)
+				},
 				PasswordRenewal: tc.enabled,
-			})
+			}
+			if !tc.noTokens {
+				cfg.CheckBearerToken = checkTestToken
+			}
+			h := newHookRouter(t, cfg)
 
 			req := newPasswordRenewalRequest(t, "Device", tc.username, tc.password)
 			if tc.token != "" {
@@ -108,6 +123,12 @@ func TestPasswordRenewal(t *testing.T) {
 			}
 			if ca.called && ca.cert != nil {
 				t.Errorf("Reenroll got a certificate, want none")
+			}
+			if basicSeen != tc.basicSeen {
+				t.Errorf("CheckBasicAuth called %t, want %t", basicSeen, tc.basicSeen)
+			}
+			if tc.token != "" && (gotUser != "" || gotPassword != "") {
+				t.Errorf("CheckBasicAuth got credentials %q/%q for a bearer token request", gotUser, gotPassword)
 			}
 		})
 	}
@@ -150,31 +171,59 @@ func TestPasswordRenewalWithCertificate(t *testing.T) {
 	}
 }
 
-// TestPasswordRenewalRequiresCheckBasicAuth checks that NewRouter refuses PasswordRenewal when
-// nothing checks the password.
-func TestPasswordRenewalRequiresCheckBasicAuth(t *testing.T) {
+// TestPasswordRenewalRequiresCredentialCheck checks that NewRouter refuses PasswordRenewal when
+// nothing checks a password or a token and accepts it with either hook.
+func TestPasswordRenewalRequiresCredentialCheck(t *testing.T) {
 	t.Parallel()
 
 	if _, err := est.NewRouter(&est.ServerConfig{CA: newRenewalCA(t), PasswordRenewal: true}); err == nil {
-		t.Fatal("NewRouter accepted PasswordRenewal without CheckBasicAuth")
+		t.Fatal("NewRouter accepted PasswordRenewal without CheckBasicAuth or CheckBearerToken")
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: newRenewalCA(t), PasswordRenewal: true, CheckBasicAuth: checkTestPassword}); err != nil {
+		t.Fatalf("NewRouter refused PasswordRenewal with CheckBasicAuth: %v", err)
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: newRenewalCA(t), PasswordRenewal: true, CheckBearerToken: checkTestToken}); err != nil {
+		t.Fatalf("NewRouter refused PasswordRenewal with CheckBearerToken: %v", err)
 	}
 }
 
-// TestClientPasswordRenewal checks that Client.Reenroll renews with a password alone over TLS.
+// TestClientPasswordRenewal checks that Client.Reenroll renews with a password or a bearer token
+// alone over TLS.
 func TestClientPasswordRenewal(t *testing.T) {
 	t.Parallel()
 
-	ca := newRenewalCA(t)
-	client := newHookClient(t, newHookRouter(t, est.ServerConfig{CA: ca, CheckBasicAuth: checkTestPassword, PasswordRenewal: true}))
-	client.Username, client.Password = "device-1", "xyzzy"
-
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-	if _, err := client.Reenroll(ctx, mustCreateCertificateRequest(t, mustGenerateECPrivateKey(t), "Device", nil)); err != nil {
-		t.Fatalf("failed to renew: %v", err)
+	testcases := []struct {
+		name     string
+		username string
+		password string
+		token    string
+	}{
+		{name: "Password", username: "device-1", password: "xyzzy"},
+		{name: "BearerToken", token: "tok-123"},
 	}
-	if !ca.called || ca.cert != nil {
-		t.Errorf("Reenroll called %t with certificate %t, want a call without certificate", ca.called, ca.cert != nil)
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ca := newRenewalCA(t)
+			client := newHookClient(t, newHookRouter(t, est.ServerConfig{
+				CA:               ca,
+				CheckBasicAuth:   checkTestPassword,
+				CheckBearerToken: checkTestToken,
+				PasswordRenewal:  true,
+			}))
+			client.Username, client.Password, client.BearerToken = tc.username, tc.password, tc.token
+
+			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+			defer cancel()
+			if _, err := client.Reenroll(ctx, mustCreateCertificateRequest(t, mustGenerateECPrivateKey(t), "Device", nil)); err != nil {
+				t.Fatalf("failed to renew: %v", err)
+			}
+			if !ca.called || ca.cert != nil {
+				t.Errorf("Reenroll called %t with certificate %t, want a call without certificate", ca.called, ca.cert != nil)
+			}
+		})
 	}
 }
 
