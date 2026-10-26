@@ -43,8 +43,9 @@ go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
 
 ### Starting the server
 
-When started with no configuration file, the EST server listens on port 8443 on every interface and
-generates a random, transient Certificate Authority (CA) which can be used for testing:
+When started with no configuration file, the EST server listens on `localhost:8443` and generates
+a random, transient Certificate Authority (CA) which can be used for testing. The CA issues a
+certificate to anyone, so serve other hosts only through `listen_address` in a configuration file:
 
     user@host:$ estserver &
     [1] 62405
