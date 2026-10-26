@@ -680,6 +680,7 @@ func (c *Client) uri(endpoint string) string {
 
 // makeHTTPClient makes and configures an HTTP client for connecting to an
 // EST server. It also returns the TLS connection, which the caller must close.
+// The client refuses redirects.
 func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn, error) {
 	conn, err := c.dial(ctx)
 	if err != nil {
@@ -700,7 +701,16 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn,
 		transport = c.WrapTransport(transport)
 	}
 
-	return &http.Client{Transport: transport}, conn, nil
+	return &http.Client{Transport: transport, CheckRedirect: refuseRedirect}, conn, nil
+}
+
+// refuseRedirect makes http.Client return a 3xx response instead of following
+// it. RFC 7030 section 3.2.1 allows only redirects within the same origin and
+// the client already holds a connection to the one server it was configured
+// with. Following a redirect would also send the request's credentials to the
+// new location, in cleartext for an http URL.
+func refuseRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // dial connects to the EST server, through a proxy when one applies, and
