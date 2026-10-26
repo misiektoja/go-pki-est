@@ -18,6 +18,7 @@ package est_test
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -98,5 +99,85 @@ func TestClientRequestContentLength(t *testing.T) {
 		case rec.contentLength != int64(rec.bodyLength) || rec.bodyLength == 0:
 			t.Errorf("%s: Content-Length %d for a body of %d bytes", path, rec.contentLength, rec.bodyLength)
 		}
+	}
+}
+
+// TestClientMaxResponseBody checks that the client reads a response within MaxResponseBody and
+// fails a larger one, also when it is a multipart response. A server must not choose how much the
+// client buffers.
+func TestClientMaxResponseBody(t *testing.T) {
+	t.Parallel()
+
+	s, newClient := newTestServer(t)
+	t.Cleanup(s.Close)
+
+	csr := mustCreateCertificateRequest(t, mustGenerateECPrivateKey(t), "Body Test", nil)
+	cacerts := func(ctx context.Context, c *est.Client) error {
+		_, err := c.CACerts(ctx)
+		return err
+	}
+	serverkeygen := func(ctx context.Context, c *est.Client) error {
+		_, _, err := c.ServerKeyGen(ctx, csr)
+		return err
+	}
+
+	testcases := []struct {
+		name    string
+		max     int64
+		call    func(context.Context, *est.Client) error
+		wantErr string
+	}{
+		{name: "Default", call: cacerts},
+		{name: "Within", max: 64 << 10, call: cacerts},
+		{name: "Exceeded", max: 64, call: cacerts, wantErr: "response body larger than 64 bytes"},
+		{name: "Multipart", max: 64, call: serverkeygen, wantErr: "response body larger than 64 bytes"},
+		{name: "Negative", max: -1, call: cacerts, wantErr: "MaxResponseBody must not be negative"},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := newClient()
+			client.MaxResponseBody = tc.max
+
+			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+			defer cancel()
+
+			err := tc.call(ctx, client)
+			if tc.wantErr == "" && err != nil {
+				t.Fatalf("got error %v, want none", err)
+			}
+			if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("got error %v, want one containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestClientMaxResponseBodyErrorMessage checks that MaxResponseBody also bounds the error message
+// of a failed request, which still yields an error with the response status.
+func TestClientMaxResponseBodyErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, strings.Repeat("x", 4096), http.StatusServiceUnavailable)
+	}))
+	defer s.Close()
+
+	pool := x509.NewCertPool()
+	pool.AddCert(s.Certificate())
+	client := &est.Client{Host: strings.TrimPrefix(s.URL, "https://"), ExplicitAnchor: pool, MaxResponseBody: 256}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	_, err := client.CACerts(ctx)
+	var estErr est.Error
+	if !errors.As(err, &estErr) || estErr.StatusCode() != http.StatusServiceUnavailable {
+		t.Fatalf("CACerts returned %v, want an error with status 503", err)
+	}
+	if !strings.Contains(err.Error(), "response body larger than 256 bytes") || strings.Contains(err.Error(), "xxxx") {
+		t.Errorf("got error %q, want the body limit and none of the message", err)
 	}
 }
