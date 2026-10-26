@@ -8,7 +8,8 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
 host, and signs in with a bearer token. It refuses redirects that could carry its credentials to
 an `http` URL and bounds response bodies. The server checks bearer tokens with a new hook and
-bounds the CA certificate cache, which a peer could grow without limit.
+bounds the CA certificate cache, which a peer could grow without limit. `estserver` listens on
+localhost by default and `estclient` does not write through symbolic links.
 
 ### Added
 - **HTTP proxies.** `Client.Proxy` chooses the proxy for the connection to the EST server, like
@@ -24,6 +25,11 @@ bounds the CA certificate cache, which a peer could grow without limit.
   Without the hook a token is not checked and does not sign a client in.
 - **estclient `-proxy` and `-token`.** The example client connects through an HTTP proxy and
   signs in with a bearer token. The configuration file takes them as `proxy` and `token`.
+
+### Changed
+- **`estserver` listens on `localhost:8443` by default.** It listened on every interface with a
+  mock CA that issues a certificate to anyone. Set `listen_address` in the `tls` section to serve
+  other hosts.
 
 ### Fixed
 - **The client refuses redirects.** It followed up to ten redirects and resent its Basic
@@ -43,6 +49,15 @@ bounds the CA certificate cache, which a peer could grow without limit.
   request per segment until the process died. A segment may now be at most 255 bytes and a longer
   one answers 414. The cache keeps at most 1024 segments and drops the least recently updated one
   first.
+- **A negative `RateLimit` is refused.** `NewRouter` served without any rate limit for a negative
+  value. It now returns an error, as it does for a negative `MaxRequestBody`.
+- **`estserver` drops slow and idle connections.** A client could hold a connection and its
+  handler by sending the request body slowly or hold a keep-alive connection without sending a
+  request. The TLS and TLS-SRP listeners now give a request 60 seconds to arrive and close an
+  idle connection after 120 seconds.
+- **`estclient` does not write through symbolic links.** `-out`, `-keyout` and `-separateout`
+  followed a symbolic link, so a link planted in a shared directory could send a private key or
+  certificate to another file. A link is now refused with an error that names it.
 
 ## [1.3.1] - 2026-10-22
 
