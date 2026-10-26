@@ -175,11 +175,16 @@ const (
 	apsParamName          = "additionalPathSegment"
 	defaultTimeout        = time.Second * 60
 	defaultMaxRequestBody = 64 << 10
+
+	// maxAPSLength bounds the additional path segment in bytes. The segment
+	// keys the CA certificate cache, so a client must not choose its size.
+	maxAPSLength = 255
 )
 
 // Log field and message constants.
 const (
 	logFieldError                 = "Error"
+	logMsgAPSTooLong              = "additional path segment too long"
 	logMsgAuthFailed              = "authentication refused"
 	logMsgCACertsFailed           = "failed to retrieve CA certificates"
 	logMsgHostNotAllowed          = "host not allowed"
@@ -295,7 +300,10 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(token)
 }
 
-// NewRouter creates a new EST server mux.
+// NewRouter creates a new EST server mux. The additional path segment of a
+// request may be at most 255 bytes, a longer one answers 414. The CA
+// certificates of at most 1024 segments are kept for client certificate
+// checks.
 func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil && cfg.CheckBearerToken == nil {
 		return nil, errors.New("PasswordRenewal requires CheckBasicAuth or CheckBearerToken")
@@ -385,6 +393,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 
 		// Endpoints with additional path segment.
 		r.Route(fmt.Sprintf("/{%s}", apsParamName), func(r chi.Router) {
+			r.Use(limitAPSLength)
 			r.Get(cacertsEndpoint, cacerts)
 			r.Get(csrattrsEndpoint, csrattrs)
 
@@ -929,6 +938,18 @@ func maxBodySize(sz int64) func(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// limitAPSLength is middleware which refuses a request whose additional path
+// segment is longer than maxAPSLength with 414.
+func limitAPSLength(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(chi.URLParam(r, apsParamName)) > maxAPSLength {
+			refuse(w, r, logMsgAPSTooLong, errAPSTooLong)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireAuth is middleware which optionally requires HTTP Basic or bearer
