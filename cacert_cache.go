@@ -17,6 +17,7 @@ package est
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/x509"
 	"fmt"
@@ -28,14 +29,22 @@ import (
 // cacertCache contains a cache of CA certificates for each "CA" (identified
 // by the optional additional path segment) to enable client certificate
 // validation during reenrollment without excessive network calls to /cacerts.
+// It holds at most maxCacheEntries entries. Any peer can add one per
+// additional path segment through /cacerts, so without the bound a peer could
+// grow the cache until the server runs out of memory.
 type cacertCache struct {
 	ca    CA
 	mutex sync.RWMutex
-	cache map[string]cacheEntry
+	cache map[string]*list.Element
+
+	// order lists the entries from the least to the most recently updated.
+	// An entry no client refreshes is evicted first.
+	order *list.List
 }
 
 // cacheEntry is an entry in the CA certificates cache.
 type cacheEntry struct {
+	aps     string
 	roots   *x509.CertPool
 	inters  *x509.CertPool
 	updated time.Time
@@ -46,6 +55,10 @@ const (
 	// be assumed to be fresh, i.e. a new call to /cacerts will not be made if
 	// the cached CA certs are younger than this time period.
 	assumeFresh = time.Minute * 5
+
+	// maxCacheEntries is the number of additional path segments whose CA
+	// certificates are kept at once.
+	maxCacheEntries = 1024
 )
 
 // Add adds a set of CA certificates to the cache. The operation is performed
@@ -82,13 +95,23 @@ func (c *cacertCache) Verify(
 	return nil
 }
 
+// lookup returns the cached entry for aps. The caller holds the mutex.
+func (c *cacertCache) lookup(aps string) (cacheEntry, bool) {
+	el, ok := c.cache[aps]
+	if !ok {
+		return cacheEntry{}, false
+	}
+	return el.Value.(cacheEntry), true
+}
+
 // addSync synchonrously adds a set of CA certificates to the cache. If
 // a sufficiently fresh entry is already in the cache, it is returned,
-// otherwise a new entry is added and returned.
+// otherwise a new entry is added and returned. When the cache is full, the
+// least recently updated entry makes room.
 func (c *cacertCache) addSync(aps string, certs []*x509.Certificate) cacheEntry {
 	// Acquire a read lock to check for an existing entry.
 	c.mutex.RLock()
-	current, ok := c.cache[aps]
+	current, ok := c.lookup(aps)
 	c.mutex.RUnlock()
 
 	// Do nothing if entry exists and was updated sufficiently recently.
@@ -119,19 +142,31 @@ func (c *cacertCache) addSync(aps string, certs []*x509.Certificate) cacheEntry 
 	defer c.mutex.Unlock()
 
 	// Check again in case entry was updated since we released the read mutex.
-	current, ok = c.cache[aps]
+	current, ok = c.lookup(aps)
 	if ok && time.Since(current.updated) < assumeFresh {
 		return current
 	}
 
 	// Add the new/updated entry to the cache and return it.
 	newEntry := cacheEntry{
+		aps:     aps,
 		roots:   roots,
 		inters:  inters,
 		updated: time.Now(),
 	}
 
-	c.cache[aps] = newEntry
+	if el, ok := c.cache[aps]; ok {
+		el.Value = newEntry
+		c.order.MoveToBack(el)
+		return newEntry
+	}
+
+	if c.order.Len() >= maxCacheEntries {
+		oldest := c.order.Front()
+		delete(c.cache, oldest.Value.(cacheEntry).aps)
+		c.order.Remove(oldest)
+	}
+	c.cache[aps] = c.order.PushBack(newEntry)
 
 	return newEntry
 }
@@ -142,7 +177,7 @@ func (c *cacertCache) addSync(aps string, certs []*x509.Certificate) cacheEntry 
 func (c *cacertCache) get(ctx context.Context, aps string, r *http.Request) (cacheEntry, error) {
 	// Acquire a read lock to check for an existing entry.
 	c.mutex.RLock()
-	current, ok := c.cache[aps]
+	current, ok := c.lookup(aps)
 	c.mutex.RUnlock()
 
 	// If entry exists and was updated sufficiently recently, return it.
@@ -165,6 +200,7 @@ func (c *cacertCache) get(ctx context.Context, aps string, r *http.Request) (cac
 func newCACertCache(ca CA) *cacertCache {
 	return &cacertCache{
 		ca:    ca,
-		cache: make(map[string]cacheEntry),
+		cache: make(map[string]*list.Element),
+		order: list.New(),
 	}
 }

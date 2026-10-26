@@ -126,6 +126,8 @@ func TestNewConfig(t *testing.T) {
 				"-" + hostHeaderFlag, "est.morefake.host",
 				"-" + usernameFlag, "otheruser",
 				"-" + passwordFlag, "otherpass",
+				"-" + tokenFlag, "othertoken",
+				"-" + proxyFlag, "http://proxy.alt.domain:3128",
 				"-" + timeoutFlag, "17s",
 			},
 			want: config{
@@ -140,6 +142,8 @@ func TestNewConfig(t *testing.T) {
 				HostHeader: "est.morefake.host",
 				Username:   "otheruser",
 				Password:   "otherpass",
+				Token:      "othertoken",
+				Proxy:      "http://proxy.alt.domain:3128",
 				PrivateKey: &privateKey{
 					Path: "test_key.pem",
 				},
@@ -177,6 +181,8 @@ func TestNewConfig(t *testing.T) {
 				HostHeader:        got.HostHeader,
 				Username:          got.Username,
 				Password:          got.Password,
+				Token:             got.Token,
+				Proxy:             got.Proxy,
 				Explicit:          got.Explicit,
 				Implicit:          got.Implicit,
 				PrivateKey:        got.PrivateKey,

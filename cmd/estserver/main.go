@@ -43,7 +43,9 @@ import (
 )
 
 const (
-	defaultListenAddr   = ":8443"
+	// defaultListenAddr serves the local host only. The mock CA issues a
+	// certificate to anyone, so another address must be chosen on purpose.
+	defaultListenAddr   = "localhost:8443"
 	healthCheckUsername = "healthcheck"
 	healthCheckEndpoint = "/healthcheck"
 
@@ -51,6 +53,15 @@ const (
 	// headers, so a client that never finishes them cannot hold a connection
 	// open indefinitely. It matches the TLS-SRP listener.
 	readHeaderTimeout = srpHandshakeTimeout
+
+	// readTimeout limits how long a client may take to send a whole request,
+	// headers and body, so a client that sends its body slowly cannot hold a
+	// connection and its handler for longer. It covers the largest request
+	// body the router accepts many times over.
+	readTimeout = 60 * time.Second
+
+	// idleTimeout closes a keep-alive connection that sends no request.
+	idleTimeout = 120 * time.Second
 )
 
 // main runs the EST server until it receives a termination signal.
@@ -247,11 +258,7 @@ func main() {
 	}
 
 	// Create and start server.
-	s := &http.Server{
-		Handler:           r,
-		TLSConfig:         tlsCfg,
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
+	s := newServer(r, tlsCfg)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP)
@@ -287,5 +294,17 @@ func main() {
 	s.Close()
 	if srpServer != nil {
 		srpServer.Close()
+	}
+}
+
+// newServer returns an HTTP server for h over tlsCfg that drops a client which
+// sends its request slowly or keeps a connection idle.
+func newServer(h http.Handler, tlsCfg *tls.Config) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 }

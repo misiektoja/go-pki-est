@@ -226,6 +226,8 @@ func listenSRP(c *tlsSRPConfig, h http.Handler, logger est.Logger) (*http.Server
 	s := &http.Server{
 		Handler:           withSRPUsername(h),
 		ReadHeaderTimeout: srpHandshakeTimeout,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
 		// net/http sets Request.TLS only for crypto/tls connections, so the
 		// handler reads the TLS-SRP state from the connection instead.
 		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {

@@ -30,6 +30,10 @@ type estError struct {
 
 // Internal error values.
 var (
+	errAPSTooLong = &estError{
+		status: http.StatusRequestURITooLong,
+		desc:   "additional path segment too long",
+	}
 	errBodyParse = &estError{
 		status: http.StatusBadRequest,
 		desc:   "unable to parse request body",

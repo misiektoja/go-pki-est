@@ -16,6 +16,7 @@ limitations under the License.
 package est
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -29,9 +30,11 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	srptls "github.com/misiektoja/go-tls-srp"
 	"github.com/smallstep/scep/x509util"
@@ -98,8 +101,24 @@ type Client struct {
 	// Password is an optional HTTP Basic Authentication password.
 	Password string
 
+	// BearerToken is an optional HTTP Bearer authentication token (RFC
+	// 6750). It is sent as "Authorization: Bearer <token>" when Username is
+	// empty, so Basic authentication takes precedence.
+	BearerToken string
+
 	// DisableKeepAlives disables HTTP keep-alives if set.
 	DisableKeepAlives bool
+
+	// Proxy returns the proxy for the connection to the EST server, as
+	// http.Transport.Proxy does, or nil for a direct connection. If Proxy
+	// is nil, http.ProxyFromEnvironment applies, so the HTTPS_PROXY and
+	// NO_PROXY environment variables choose the proxy. The client reaches
+	// the server through an http or https proxy with a CONNECT tunnel, so
+	// the TLS handshake, OnConnect and the tls-unique value work as without
+	// a proxy. The user information of the proxy URL is sent as Basic
+	// Proxy-Authorization. An https proxy is checked against the system
+	// roots.
+	Proxy func(*http.Request) (*url.URL, error)
 
 	// InsecureSkipVerify controls whether the client verifies the EST server's
 	// certificate chain and host name. If true, the client accepts any
@@ -114,7 +133,8 @@ type Client struct {
 	// WrapTransport, if set, wraps the HTTP transport of every request. The
 	// wrapper sees each request and response, for example to record a
 	// protocol trace, and must pass every request on to the transport it
-	// wraps.
+	// wraps. The transport it wraps already bounds response bodies with
+	// MaxResponseBody.
 	WrapTransport func(http.RoundTripper) http.RoundTripper
 
 	// OnConnect, if set, is called with the connection of each operation
@@ -129,6 +149,14 @@ type Client struct {
 	// servers add its chain. The client then returns the one certificate
 	// that issued none of the others.
 	AllowCertificateChain bool
+
+	// MaxResponseBody bounds the size of a response body in bytes, including
+	// an error message and all parts of a multipart response. A larger
+	// response fails the operation. If zero, 1 MiB is used. A chain of large
+	// post-quantum CA certificates can exceed that, such as SLH-DSA-SHA2-256f
+	// certificates at about 50 KB each in base64. A negative value fails
+	// every operation.
+	MaxResponseBody int64
 
 	// SRPUsername, if set, signs in with TLS-SRP (RFC 5054) as this user
 	// with SRPPassword, as RFC 7030 section 3.3.3 allows. The password also
@@ -156,8 +184,10 @@ type clientConn struct {
 
 // Client constants.
 const (
-	estVersion = "v1.3.1"
+	estVersion = "v1.4.0"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
+
+	defaultMaxResponseBody = 1 << 20
 )
 
 // CACerts requests a copy of the current CA certificates.
@@ -338,7 +368,7 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
-			return nil, nil, fmt.Errorf("failed to read HTTP response part: %w", err)
+			return nil, nil, fmt.Errorf("failed to read HTTP response part: %w", readError(resp, err))
 		}
 		defer func() { _ = part.Close() }()
 
@@ -479,7 +509,7 @@ func (c *Client) TPMEnroll(
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get next HTTP response part: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to get next HTTP response part: %w", readError(resp, err))
 		}
 		defer func() { _ = part.Close() }()
 
@@ -532,8 +562,11 @@ func (c *Client) newRequest(
 		req.Host = c.HostHeader
 	}
 
-	if c.Username != "" {
+	switch {
+	case c.Username != "":
 		req.SetBasicAuth(c.Username, c.Password)
+	case c.BearerToken != "":
+		req.Header.Set("Authorization", "Bearer "+c.BearerToken)
 	}
 
 	for k, v := range c.AdditionalHeaders {
@@ -576,6 +609,8 @@ func (c *Client) addChallengePassword(csr []byte, challengePassword string) ([]b
 // parse the Retry-After header and return a value, note that 202 Accepted
 // is treated as an error for this purpose. A body that cannot be read still
 // yields an est.Error with the response status, so callers can act on it.
+// Control characters in the message other than newline and tab are escaped,
+// so a server cannot send terminal escape sequences to whoever prints it.
 func checkResponseError(r *http.Response) error {
 	if r.StatusCode == http.StatusOK {
 		return nil
@@ -603,7 +638,7 @@ func checkResponseError(r *http.Response) error {
 				msg = fmt.Sprintf("%s (failed to read response body: %v)",
 					http.StatusText(r.StatusCode), err)
 			case len(data) > 0:
-				msg = string(data)
+				msg = escapeControls(string(data))
 			default:
 				msg = http.StatusText(r.StatusCode)
 			}
@@ -638,6 +673,30 @@ func checkResponseError(r *http.Response) error {
 	}
 }
 
+// escapeControls returns s with every control character other than newline
+// and tab in the Go escape form, such as \x1b, so text a server sent can be
+// printed without acting on a terminal.
+func escapeControls(s string) string {
+	if !strings.ContainsFunc(s, isUnsafeControl) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isUnsafeControl(r) {
+			b.WriteString(fmt.Sprintf("\\x%02x", r))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isUnsafeControl reports whether r is a control character that may act on a
+// terminal: every C0 and C1 control and DEL except newline and tab.
+func isUnsafeControl(r rune) bool {
+	return unicode.IsControl(r) && r != '\n' && r != '\t'
+}
+
 // uri builds an EST URI for the specified endpoint, using the optional
 // additional path segment if appropriate.
 func (c *Client) uri(endpoint string) string {
@@ -659,7 +718,17 @@ func (c *Client) uri(endpoint string) string {
 
 // makeHTTPClient makes and configures an HTTP client for connecting to an
 // EST server. It also returns the TLS connection, which the caller must close.
+// The client refuses redirects and bounds response bodies with
+// MaxResponseBody before WrapTransport sees them.
 func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn, error) {
+	maxBody := int64(defaultMaxResponseBody)
+	switch {
+	case c.MaxResponseBody < 0:
+		return nil, nil, errors.New("MaxResponseBody must not be negative")
+	case c.MaxResponseBody > 0:
+		maxBody = c.MaxResponseBody
+	}
+
 	conn, err := c.dial(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -669,26 +738,159 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn,
 		c.OnConnect(conn.Conn)
 	}
 
-	var transport http.RoundTripper = &http.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return conn.Conn, nil
+	var transport http.RoundTripper = &boundResponses{
+		next: &http.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return conn.Conn, nil
+			},
+			DisableKeepAlives: c.DisableKeepAlives,
 		},
-		DisableKeepAlives: c.DisableKeepAlives,
+		max: maxBody,
 	}
 	if c.WrapTransport != nil {
 		transport = c.WrapTransport(transport)
 	}
 
-	return &http.Client{Transport: transport}, conn, nil
+	return &http.Client{Transport: transport, CheckRedirect: refuseRedirect}, conn, nil
 }
 
-// dial connects to the EST server and completes the TLS handshake, with
-// TLS-SRP when SRPUsername is set.
+// refuseRedirect makes http.Client return a 3xx response instead of following
+// it. RFC 7030 section 3.2.1 allows only redirects within the same origin and
+// the client already holds a connection to the one server it was configured
+// with. Following a redirect would also send the request's credentials to the
+// new location, in cleartext for an http URL.
+func refuseRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
+// dial connects to the EST server, through a proxy when one applies, and
+// completes the TLS handshake, with TLS-SRP when SRPUsername is set.
 func (c *Client) dial(ctx context.Context) (*clientConn, error) {
+	raw, err := c.dialTCP(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if c.SRPUsername != "" {
-		return c.dialSRP(ctx)
+		return c.handshakeSRP(ctx, raw)
+	}
+	return c.handshakeTLS(ctx, raw)
+}
+
+// dialTCP opens the TCP connection to the EST server, through a CONNECT
+// tunnel when Proxy or the environment names a proxy.
+func (c *Client) dialTCP(ctx context.Context) (net.Conn, error) {
+	proxyURL, err := c.proxyURL(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to choose a proxy: %w", err)
+	}
+	if proxyURL == nil {
+		return (&net.Dialer{}).DialContext(ctx, tcpProtocol, c.Host)
+	}
+	return dialThroughProxy(ctx, proxyURL, c.Host)
+}
+
+// proxyURL returns the proxy for the EST server, or nil for a direct
+// connection.
+func (c *Client) proxyURL(ctx context.Context) (*url.URL, error) {
+	proxy := c.Proxy
+	if proxy == nil {
+		proxy = http.ProxyFromEnvironment
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.uri(""), nil)
+	if err != nil {
+		return nil, err
+	}
+	return proxy(req)
+}
+
+// dialThroughProxy connects to proxyURL and asks it for a CONNECT tunnel to
+// target. An https proxy is reached over TLS and checked against the system
+// roots. The user information of proxyURL is sent as Basic
+// Proxy-Authorization.
+func dialThroughProxy(ctx context.Context, proxyURL *url.URL, target string) (net.Conn, error) {
+	var (
+		addr string
+		conn net.Conn
+		err  error
+	)
+	switch proxyURL.Scheme {
+	case "http":
+		addr = withDefaultPort(proxyURL.Host, "80")
+		conn, err = (&net.Dialer{}).DialContext(ctx, tcpProtocol, addr)
+	case "https":
+		addr = withDefaultPort(proxyURL.Host, "443")
+		dialer := &tls.Dialer{Config: &tls.Config{MinVersion: tls.VersionTLS12}}
+		conn, err = dialer.DialContext(ctx, tcpProtocol, addr)
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme %q, want http or https", proxyURL.Scheme)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to proxy %s: %w", addr, err)
 	}
 
+	// A canceled context closes the connection, which ends the exchange.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	req := &http.Request{
+		Method: http.MethodConnect,
+		URL:    &url.URL{Opaque: target},
+		Host:   target,
+		Header: http.Header{},
+	}
+	if user := proxyURL.User; user != nil {
+		password, _ := user.Password()
+		credentials := base64.StdEncoding.EncodeToString([]byte(user.Username() + ":" + password))
+		req.Header.Set("Proxy-Authorization", "Basic "+credentials)
+	}
+	// fail closes the connection and reports the step that failed, or the
+	// canceled context that closed the connection.
+	fail := func(step string, err error) (net.Conn, error) {
+		_ = conn.Close()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, fmt.Errorf("failed to %s proxy %s: %w", step, addr, err)
+	}
+	if err := req.Write(conn); err != nil {
+		return fail("send CONNECT to", err)
+	}
+	// The tunnel data follows the response headers, so the body is never read or closed.
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req) //nolint:bodyclose
+	if err != nil {
+		return fail("read the CONNECT response of", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = conn.Close()
+		return nil, fmt.Errorf("proxy %s refused the tunnel to %s: %s", addr, target, resp.Status)
+	}
+	if err := ctx.Err(); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// withDefaultPort adds port to addr when it names no port.
+func withDefaultPort(addr, port string) string {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return net.JoinHostPort(addr, port)
+	}
+	return addr
+}
+
+// serverName returns the host of Host without the port, for the TLS server
+// name.
+func (c *Client) serverName() string {
+	host, _, err := net.SplitHostPort(c.Host)
+	if err != nil {
+		return c.Host
+	}
+	return host
+}
+
+// handshakeTLS completes the TLS handshake with the EST server on raw and
+// closes raw when it fails.
+func (c *Client) handshakeTLS(ctx context.Context, raw net.Conn) (*clientConn, error) {
 	var rootCAs *x509.CertPool
 	if c.ExplicitAnchor != nil {
 		rootCAs = c.ExplicitAnchor
@@ -707,33 +909,25 @@ func (c *Client) dial(ctx context.Context) (*clientConn, error) {
 	tlsClientConfig := &tls.Config{
 		RootCAs:      rootCAs,
 		Certificates: tlsCerts,
+		ServerName:   c.serverName(),
 		//nolint:gosec // G402: the caller opts in to fetch /cacerts for out-of-band verification, as the field documents.
 		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 
-	dialer := &tls.Dialer{Config: tlsClientConfig}
-	nc, err := dialer.DialContext(ctx, tcpProtocol, c.Host)
-	if err != nil {
+	conn := tls.Client(raw, tlsClientConfig)
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
 		return nil, err
 	}
-	conn := nc.(*tls.Conn)
 	return &clientConn{Conn: conn, tlsUnique: conn.ConnectionState().TLSUnique}, nil
 }
 
-// dialSRP connects to the EST server and signs in with TLS-SRP.
-func (c *Client) dialSRP(ctx context.Context) (*clientConn, error) {
-	raw, err := (&net.Dialer{}).DialContext(ctx, tcpProtocol, c.Host)
-	if err != nil {
-		return nil, err
-	}
-	host, _, err := net.SplitHostPort(c.Host)
-	if err != nil {
-		host = c.Host
-	}
+// handshakeSRP signs in with TLS-SRP on raw and closes raw when it fails.
+func (c *Client) handshakeSRP(ctx context.Context, raw net.Conn) (*clientConn, error) {
 	conn := srptls.Client(raw, &srptls.Config{
 		Username:     c.SRPUsername,
 		Password:     c.SRPPassword,
-		ServerName:   host,
+		ServerName:   c.serverName(),
 		MinGroupBits: c.SRPMinGroupBits,
 	})
 	if err := conn.HandshakeContext(ctx); err != nil {

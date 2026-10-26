@@ -3,6 +3,48 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.4.0] - 2026-10-26
+
+The client connects through HTTP proxies and signs in with bearer tokens, which the server checks
+with a new hook. The client refuses redirects and bounds response bodies. The server bounds its
+CA certificate cache. `estserver` listens on localhost by default.
+
+### Added
+- **HTTP proxies.** `Client.Proxy` chooses the proxy, like `http.Transport.Proxy`. When it is nil,
+  the client now uses `HTTPS_PROXY` and `NO_PROXY`. TLS-SRP and the `tls-unique` value work
+  through the proxy.
+- **Bearer tokens.** `Client.BearerToken` sends `Authorization: Bearer <token>` (RFC 6750).
+  `Username` takes precedence. The server checks the token with `ServerConfig.CheckBearerToken`
+  in place of `CheckBasicAuth`. Without that hook a token does not sign a client in.
+  `PasswordRenewal` also accepts a bearer token that the hook accepted.
+- **estclient `-proxy` and `-token`** set the proxy and bearer token. The configuration file takes
+  them as `proxy` and `token`.
+
+### Changed
+- **`estserver` listens on `localhost:8443` by default.** It served its mock CA on every interface
+  before. Set `listen_address` in the `tls` section to serve other hosts.
+- **`CA.Reenroll` documentation** says that the server does not check revocation and that a CA
+  must match a login renewal to the signed-in identity, not to the CSR subject.
+
+### Fixed
+- **Server error messages are escaped.** Control characters other than newline and tab appear as
+  escapes such as `\x1b`, so a malicious server cannot send terminal escape sequences through
+  `estclient`.
+- **The client refuses redirects.** It followed them and could resend its credentials in
+  cleartext to an `http` URL. A 3xx answer is now returned as an error.
+- **Response bodies are bounded by `Client.MaxResponseBody`**, 1 MiB by default. A crafted
+  response could exhaust memory or crash the client. For the same reason keep a server's
+  `MaxRequestBody` below 4 MiB.
+- **The CA certificate cache is bounded.** A peer could grow server memory without limit by
+  naming many `/cacerts` path segments. A segment longer than 255 bytes now answers 414 and the
+  cache keeps at most 1024 segments.
+- **A negative `RateLimit` is refused.** `NewRouter` returns an error instead of serving without
+  a limit.
+- **`estserver` drops slow and idle connections.** A request must arrive within 60 seconds and an
+  idle connection closes after 120 seconds.
+- **`estclient` refuses symbolic links as output files.** `-out`, `-keyout` and `-separateout`
+  followed them, so a planted link could send a private key to another file.
+
 ## [1.3.1] - 2026-10-22
 
 The client sends the length of every request body, so it can enroll with servers that cannot
@@ -167,6 +209,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.4.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.0
 [1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
 [1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
 [1.2.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.2.0

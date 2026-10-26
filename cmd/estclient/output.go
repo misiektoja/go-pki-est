@@ -27,13 +27,21 @@ import (
 // for closing the file with the returned function.
 //
 // On Unix, existing regular files lose read and write permissions not
-// granted by perm before truncation.
+// granted by perm before truncation. A symbolic link is refused, so a link
+// planted in a shared directory cannot redirect a private key or certificate
+// to another file.
 func maybeRedirect(w io.Writer, filename string, perm os.FileMode) (io.Writer, func() error, error) {
 	if filename == "" {
 		return w, func() error { return nil }, nil
 	}
 
-	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, perm)
+	// Lstat names the link in the error on every platform. O_NOFOLLOW closes
+	// the window between the two calls where the platform has it.
+	if fi, err := os.Lstat(filename); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, fmt.Errorf("output file %s is a symbolic link, name its target instead", filename)
+	}
+
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|openNoFollow, perm)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create output file: %v", err)
 	}

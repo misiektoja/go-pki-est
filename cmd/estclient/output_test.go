@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +76,46 @@ func TestMaybeRedirectPermissions(t *testing.T) {
 				t.Fatalf("got output %q, want %q", data, "new")
 			}
 		})
+	}
+}
+
+// TestMaybeRedirectRefusesSymlink checks that a symbolic link is not followed, so a link planted
+// in a shared directory cannot redirect a private key or certificate to another file.
+func TestMaybeRedirectRefusesSymlink(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.pem")
+	if err := os.WriteFile(target, []byte("old contents"), 0644); err != nil {
+		t.Fatalf("failed to write target: %v", err)
+	}
+	link := filepath.Join(dir, "link.pem")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create a symbolic link: %v", err)
+	}
+
+	_, closeFunc, err := maybeRedirect(nil, link, 0600)
+	if err == nil {
+		closeFunc()
+		t.Fatal("opened the output through a symbolic link")
+	}
+	if !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("got error %q, want one naming the symbolic link", err)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("failed to read target: %v", err)
+	}
+	if string(data) != "old contents" {
+		t.Errorf("target holds %q, want its old contents", data)
+	}
+	fi, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("failed to stat target: %v", err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0644 {
+		t.Errorf("target permissions changed to %v", fi.Mode().Perm())
 	}
 }
 

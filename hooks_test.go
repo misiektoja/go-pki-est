@@ -30,6 +30,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,6 +183,74 @@ func TestCheckBasicAuthResult(t *testing.T) {
 			}
 			if got := w.Header().Get("Retry-After"); got != tc.retryAfter {
 				t.Errorf("got Retry-After %q, want %q", got, tc.retryAfter)
+			}
+		})
+	}
+}
+
+// TestCheckBearerTokenResult checks that CheckBearerToken checks a bearer token in place of
+// CheckBasicAuth, how its results map to responses and that without it the token reaches
+// CheckBasicAuth as a request without credentials.
+func TestCheckBearerTokenResult(t *testing.T) {
+	t.Parallel()
+
+	testcases := []struct {
+		name       string
+		noTokens   bool
+		noBasic    bool
+		token      string
+		result     error
+		status     int
+		challenges []string
+		basicSeen  bool
+	}{
+		{name: "Accepted", token: "tok-123", status: http.StatusOK},
+		{name: "Forbidden", token: "tok-123", result: statusError{status: http.StatusForbidden}, status: http.StatusForbidden},
+		{name: "PlainError", token: "wrong", result: errors.New("bad token"), status: http.StatusUnauthorized, challenges: []string{`Basic realm="estserver@example.com"`, `Bearer realm="estserver@example.com", error="invalid_token"`}},
+		{name: "NoBasicCheck", noBasic: true, token: "wrong", result: errors.New("bad token"), status: http.StatusUnauthorized, challenges: []string{`Bearer realm="estserver@example.com", error="invalid_token"`}},
+		{name: "Unchecked", noTokens: true, token: "tok-123", status: http.StatusOK, basicSeen: true},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotToken, gotUser, gotPassword string
+			var basicSeen bool
+			cfg := est.ServerConfig{}
+			if !tc.noTokens {
+				cfg.CheckBearerToken = func(ctx context.Context, r *http.Request, aps, token string) error {
+					gotToken = token
+					return tc.result
+				}
+			}
+			if !tc.noBasic {
+				cfg.CheckBasicAuth = func(ctx context.Context, r *http.Request, aps, username, password string) error {
+					basicSeen, gotUser, gotPassword = true, username, password
+					return nil
+				}
+			}
+			h := newHookRouter(t, cfg)
+
+			req := httptest.NewRequest(http.MethodPost, enrollEndpoint, bytes.NewReader(mustMakeBase64CSR(t, "Device")))
+			req.Host = "example.com"
+			req.Header.Set(typeHeader, mimeTypePKCS10)
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			if w.Code != tc.status {
+				t.Fatalf("got status %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+			if !tc.noTokens && gotToken != tc.token {
+				t.Errorf("CheckBearerToken got token %q, want %q", gotToken, tc.token)
+			}
+			if basicSeen != tc.basicSeen || gotUser != "" || gotPassword != "" {
+				t.Errorf("CheckBasicAuth called %t with %q/%q, want called %t without credentials", basicSeen, gotUser, gotPassword, tc.basicSeen)
+			}
+			//nolint:staticcheck // SA1008: the server stores the header under this spelling for libest.
+			if got := w.Header()["WWW-Authenticate"]; !slices.Equal(got, tc.challenges) {
+				t.Errorf("got challenges %q, want %q", got, tc.challenges)
 			}
 		})
 	}
@@ -589,6 +658,20 @@ func TestMaxRequestBody(t *testing.T) {
 	}
 	if _, err := est.NewRouter(&est.ServerConfig{CA: ca, MaxRequestBody: -1}); err == nil {
 		t.Fatal("negative MaxRequestBody accepted")
+	}
+}
+
+// TestNegativeRateLimit checks that NewRouter refuses a negative RateLimit instead of serving
+// without any limit, which rate.Every makes of a negative interval.
+func TestNegativeRateLimit(t *testing.T) {
+	t.Parallel()
+
+	ca, err := mockca.NewTransient()
+	if err != nil {
+		t.Fatalf("failed to create mock CA: %v", err)
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: ca, RateLimit: -1}); err == nil {
+		t.Fatal("negative RateLimit accepted")
 	}
 }
 

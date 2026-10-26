@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -49,6 +50,8 @@ type config struct {
 	HostHeader        string            `json:"host_header"`
 	Username          string            `json:"username"`
 	Password          string            `json:"password"`
+	Token             string            `json:"token"`
+	Proxy             string            `json:"proxy"`
 	Explicit          string            `json:"explicit_anchor"`
 	Implicit          string            `json:"implicit_anchor"`
 	SigningKey        *privateKey       `json:"signing_key,omitempty"`
@@ -162,7 +165,16 @@ func (cfg *config) MakeClient() (*est.Client, error) {
 		Certificates:          cfg.certificates,
 		Username:              cfg.Username,
 		Password:              cfg.Password,
+		BearerToken:           cfg.Token,
 		InsecureSkipVerify:    cfg.insecure,
+	}
+
+	if cfg.Proxy != "" {
+		proxyURL, err := url.Parse(cfg.Proxy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse proxy URL: %v", err)
+		}
+		client.Proxy = http.ProxyURL(proxyURL)
 	}
 
 	// Host is the only required field for all operations.
@@ -556,6 +568,14 @@ func newConfig(set *flag.FlagSet) (config, error) {
 
 	if password, ok := cfg.flags[passwordFlag]; ok {
 		cfg.Password = password
+	}
+
+	if token, ok := cfg.flags[tokenFlag]; ok {
+		cfg.Token = token
+	}
+
+	if proxy, ok := cfg.flags[proxyFlag]; ok {
+		cfg.Proxy = proxy
 	}
 
 	if hdrs, ok := cfg.flags[headersFlag]; ok {

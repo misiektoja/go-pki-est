@@ -1,8 +1,11 @@
 # go-pki-est
 
+[![GitHub Release](https://img.shields.io/github/v/release/misiektoja/go-pki-est?style=flat-square&color=blue)](https://github.com/misiektoja/go-pki-est/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-est.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-est)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Tests](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/test.yml)
+[![Supply chain](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml)
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fgo-pki-est&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/go-pki-est)
 
 Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
 defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
@@ -39,12 +42,30 @@ go install github.com/misiektoja/go-pki-est/cmd/estclient@latest
 go install github.com/misiektoja/go-pki-est/cmd/estserver@latest
 ```
 
+### Verifying a release
+
+Each [GitHub release](https://github.com/misiektoja/go-pki-est/releases) carries the complete
+source tree as ZIP and tar archives, a CycloneDX SBOM, their SHA-256 checksums and a signed
+provenance bundle. Check a downloaded file against the checksums and confirm that the release
+workflow of this repository built it:
+
+```bash
+shasum -a 256 -c go-pki-est-v1.4.0_SHA256SUMS.txt
+```
+
+```bash
+gh attestation verify go-pki-est-v1.4.0-source.tar.gz --repo misiektoja/go-pki-est
+```
+
+To verify offline, add `--bundle go-pki-est-v1.4.0.intoto.jsonl`.
+
 ## Quickstart
 
 ### Starting the server
 
-When started with no configuration file, the EST server listens on port 8443 on every interface and
-generates a random, transient Certificate Authority (CA) which can be used for testing:
+When started with no configuration file, the EST server listens on `localhost:8443` and generates
+a random, transient Certificate Authority (CA) which can be used for testing. The CA issues a
+certificate to anyone, so serve other hosts only through `listen_address` in a configuration file:
 
     user@host:$ estserver &
     [1] 62405
@@ -161,25 +182,33 @@ fields hand decisions to the host:
 
 * `CheckBasicAuth` checks every enrollment request, also one without a password, so the host can
   accept a client certificate instead. It can answer 401, 403 or 429 with `Retry-After`.
+* `CheckBearerToken` checks the token of an `Authorization: Bearer` header (RFC 6750) in place of
+  `CheckBasicAuth`. Without it a bearer token is not checked and does not sign a client in.
 * `CheckCSRSignature` verifies CSR signatures that `crypto/x509` cannot, such as composite ML-DSA.
 * `VerifyClientCertificate` checks the client certificate of a renewal in place of the check
   against `/cacerts`, for certificates `crypto/x509` cannot verify, such as those an SLH-DSA CA
   signed. The Subject and SubjectAltName comparison still runs first.
 * `Refusals` reports requests refused before they reach the CA, for audit records or rate limits.
-* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
-  RFC 7030 section 2.3 allows. It is off by default.
+* `PasswordRenewal` lets `/simplereenroll` accept a password `CheckBasicAuth` accepted or a bearer
+  token `CheckBearerToken` accepted instead of a client certificate, as RFC 7030 section 2.3
+  allows. It is off by default.
 * `OmitTransferEncoding` drops the `Content-Transfer-Encoding` header for clients that reject it.
 * `OmitStrictTransportSecurity` drops the `Strict-Transport-Security` header, so the host can send
   its own value or none.
 * `MaxRequestBody` raises the 64 KiB request limit for CSRs of large post-quantum keys. An
-  SLH-DSA-SHA2-256f CSR is about 67 KB in base64.
+  SLH-DSA-SHA2-256f CSR is about 67 KB in base64. Keep it below 4 MiB, because `/tpmenroll`
+  decodes a PKCS#7 part recursively and a structure nested about 10 MB deep ends the process.
+
+The additional path segment of a request may be at most 255 bytes. A longer one answers 414. The
+server keeps the CA certificates of at most 1024 segments for client certificate checks.
 
 **TLS-SRP** (RFC 5054) signs a client in with a username and password during the TLS handshake,
 as libest does with `--srp`. A host that terminates TLS-SRP passes the username to the router with
 `WithSRPUsername`. `CheckBasicAuth` and the CA read it with `SRPUsernameFromContext`.
 `/simplereenroll` then accepts the request without a client certificate. As with
-`PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed.
-`estserver` serves TLS-SRP and the client signs in with it through
+`PasswordRenewal`, the CA receives a nil certificate and decides which certificate is renewed. It
+must choose it by the signed-in identity, not by the CSR subject. The server also leaves
+revocation checks to the CA. `estserver` serves TLS-SRP and the client signs in with it through
 [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
 
 ### Embedding the client
@@ -199,6 +228,17 @@ application watch and relax the client:
   anchors and client certificates are not used. TLS-SRP runs over TLS 1.2, so the `tls-unique`
   challenge password works. `SRPMinGroupBits` sets the smallest SRP group the client accepts.
   The default is 2048 bits.
+* `Proxy` chooses the proxy for the connection to the EST server, like `http.Transport.Proxy`.
+  When it is nil, the `HTTPS_PROXY` and `NO_PROXY` environment variables apply. The client
+  tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP, `OnConnect` and the
+  `tls-unique` value work as without a proxy. Credentials in the proxy URL are sent as Basic
+  `Proxy-Authorization`.
+* `BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as `Authorization: Bearer`
+  on every request. `Username` and `Password` take precedence.
+* `MaxResponseBody` raises the 1 MiB limit on a response body, for a chain of large post-quantum
+  CA certificates.
+
+The client does not follow redirects. A 3xx answer is returned as an error with its status.
 
 ### Post-quantum algorithms
 
@@ -233,9 +273,12 @@ records the attribution.
 
 ## Support and contributing
 
-Report vulnerabilities privately as [SECURITY.md](SECURITY.md) describes. The
-[Contributing Guide](CONTRIBUTING.md) lists the development checks. [CHANGELOG.md](CHANGELOG.md)
-records the changes in each release.
+[SUPPORT.md](SUPPORT.md) says where to ask questions and what to include in a bug report. Report
+vulnerabilities privately as [SECURITY.md](SECURITY.md) describes. The
+[Contributing Guide](CONTRIBUTING.md) lists the development checks and the
+[Code of conduct](CODE_OF_CONDUCT.md) applies to every project space.
+[CHANGELOG.md](CHANGELOG.md) records the changes in each release and
+[DEPENDENCIES.md](DEPENDENCIES.md) lists the third-party modules and their licenses.
 
 ## License
 

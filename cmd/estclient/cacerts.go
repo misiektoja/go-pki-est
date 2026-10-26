@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/globalsign/pemfile"
@@ -107,12 +106,11 @@ func cacerts(w io.Writer, set *flag.FlagSet) error {
 		for i, cert := range certs {
 			filename := fmt.Sprintf("%s%d.pem", prefix, i+1)
 
-			//nolint:gosec // G302: CA certificates are public. The umask sets the final mode.
-			out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+			out, closeFunc, err := maybeRedirect(nil, filename, 0666)
 			if err != nil {
-				return fmt.Errorf("failed to create output file: %v", err)
+				return err
 			}
-			defer out.Close()
+			defer closeFunc()
 
 			if err := pemfile.WriteCert(out, cert); err != nil {
 				return fmt.Errorf("failed to write CA certificate: %v", err)

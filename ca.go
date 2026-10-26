@@ -48,11 +48,18 @@ type CA interface {
 	Enroll(ctx context.Context, csr *x509.CertificateRequest, aps string, r *http.Request) (*x509.Certificate, error)
 
 	// Reenroll requests renewal/rekey of an existing certificate. See RFC7030
-	// 4.2. cert is the TLS client certificate being renewed. It is nil when
-	// the client sent no certificate and signed in with TLS-SRP or, with
-	// ServerConfig.PasswordRenewal, with HTTP Basic credentials. Then the CA
-	// decides which certificate is renewed. SRPUsernameFromContext returns
-	// the TLS-SRP username and r.BasicAuth the HTTP Basic one.
+	// 4.2. cert is the TLS client certificate being renewed. The server has
+	// checked that it chains to the certificates CACerts returned, is within
+	// its validity period and allows client authentication or has let
+	// ServerConfig.VerifyClientCertificate decide. It does not check
+	// revocation, so a CA that revokes certificates must refuse a revoked
+	// one here. cert is nil when the client sent no certificate and signed
+	// in with TLS-SRP or, with ServerConfig.PasswordRenewal, with HTTP Basic
+	// credentials or a bearer token. Then the CA decides which certificate
+	// is renewed and must choose it by the signed-in identity, not by the
+	// Subject of csr, which any user could name. SRPUsernameFromContext
+	// returns the TLS-SRP username, r.BasicAuth the HTTP Basic one and the
+	// Authorization header the bearer token.
 	Reenroll(ctx context.Context, cert *x509.Certificate, csr *x509.CertificateRequest, aps string, r *http.Request) (*x509.Certificate, error)
 
 	// ServerKeyGen requests a new certificate and a private key. The key must
