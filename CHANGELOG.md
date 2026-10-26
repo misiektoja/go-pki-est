@@ -6,7 +6,8 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.4.0] - TBD
 
 The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
-host, and signs in with a bearer token.
+host, and signs in with a bearer token. The server checks bearer tokens with a new hook and
+bounds the CA certificate cache, which a peer could grow without limit.
 
 ### Added
 - **HTTP proxies.** `Client.Proxy` chooses the proxy for the connection to the EST server, like
@@ -15,11 +16,21 @@ host, and signs in with a bearer token.
   `OnConnect` and the `tls-unique` value work as without a proxy. Credentials in the proxy URL
   are sent as Basic `Proxy-Authorization`.
 - **Bearer tokens.** `Client.BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as
-  `Authorization: Bearer <token>` on every request. `Username` takes precedence. A server reads
-  the token from the request in `CheckBasicAuth`. `PasswordRenewal` also accepts a bearer token
-  for `/simplereenroll` without a client certificate.
+  `Authorization: Bearer <token>` on every request. `Username` takes precedence. A server checks
+  the token with `ServerConfig.CheckBearerToken`, which runs in place of `CheckBasicAuth` for a
+  request that carries one and answers 401 with a Bearer challenge. `PasswordRenewal` also
+  accepts a bearer token that hook accepted for `/simplereenroll` without a client certificate.
+  Without the hook a token is not checked and does not sign a client in.
 - **estclient `-proxy` and `-token`.** The example client connects through an HTTP proxy and
   signs in with a bearer token. The configuration file takes them as `proxy` and `token`.
+
+### Fixed
+- **The CA certificate cache is bounded.** The server kept the `/cacerts` result of every
+  additional path segment a client named, with no limit on their number or length. When the CA
+  answers unknown segments, as the mock CA does, a peer could grow the server's memory with one
+  request per segment until the process died. A segment may now be at most 255 bytes and a longer
+  one answers 414. The cache keeps at most 1024 segments and drops the least recently updated one
+  first.
 
 ## [1.3.1] - 2026-10-22
 
