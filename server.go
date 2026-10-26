@@ -133,6 +133,9 @@ type ServerConfig struct {
 	// requests are refused with 413. If zero, 64 KiB is used. A CSR for a
 	// large post-quantum key can exceed that, such as an SLH-DSA-SHA2-256f
 	// request at about 67 KB in base64. NewRouter refuses a negative value.
+	// Keep it below 4 MiB: /tpmenroll decodes its PKCS#7 part with a parser
+	// that recurses once per nested structure. A structure nested about
+	// 10 MB deep exhausts the stack and ends the process.
 	MaxRequestBody int64
 
 	// TrustProxyHeaders sets the request's RemoteAddr from the X-Real-IP or

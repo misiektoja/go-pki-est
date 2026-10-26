@@ -132,7 +132,8 @@ type Client struct {
 	// WrapTransport, if set, wraps the HTTP transport of every request. The
 	// wrapper sees each request and response, for example to record a
 	// protocol trace, and must pass every request on to the transport it
-	// wraps.
+	// wraps. The transport it wraps already bounds response bodies with
+	// MaxResponseBody.
 	WrapTransport func(http.RoundTripper) http.RoundTripper
 
 	// OnConnect, if set, is called with the connection of each operation
@@ -147,6 +148,14 @@ type Client struct {
 	// servers add its chain. The client then returns the one certificate
 	// that issued none of the others.
 	AllowCertificateChain bool
+
+	// MaxResponseBody bounds the size of a response body in bytes, including
+	// an error message and all parts of a multipart response. A larger
+	// response fails the operation. If zero, 1 MiB is used. A chain of large
+	// post-quantum CA certificates can exceed that, such as SLH-DSA-SHA2-256f
+	// certificates at about 50 KB each in base64. A negative value fails
+	// every operation.
+	MaxResponseBody int64
 
 	// SRPUsername, if set, signs in with TLS-SRP (RFC 5054) as this user
 	// with SRPPassword, as RFC 7030 section 3.3.3 allows. The password also
@@ -176,6 +185,8 @@ type clientConn struct {
 const (
 	estVersion = "v1.3.1"
 	userAgent  = "go-pki-est EST client " + estVersion + " github.com/misiektoja/go-pki-est"
+
+	defaultMaxResponseBody = 1 << 20
 )
 
 // CACerts requests a copy of the current CA certificates.
@@ -356,7 +367,7 @@ func (c *Client) ServerKeyGen(ctx context.Context, r *x509.CertificateRequest) (
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
-			return nil, nil, fmt.Errorf("failed to read HTTP response part: %w", err)
+			return nil, nil, fmt.Errorf("failed to read HTTP response part: %w", readError(resp, err))
 		}
 		defer func() { _ = part.Close() }()
 
@@ -497,7 +508,7 @@ func (c *Client) TPMEnroll(
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get next HTTP response part: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to get next HTTP response part: %w", readError(resp, err))
 		}
 		defer func() { _ = part.Close() }()
 
@@ -680,8 +691,17 @@ func (c *Client) uri(endpoint string) string {
 
 // makeHTTPClient makes and configures an HTTP client for connecting to an
 // EST server. It also returns the TLS connection, which the caller must close.
-// The client refuses redirects.
+// The client refuses redirects and bounds response bodies with
+// MaxResponseBody before WrapTransport sees them.
 func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn, error) {
+	maxBody := int64(defaultMaxResponseBody)
+	switch {
+	case c.MaxResponseBody < 0:
+		return nil, nil, errors.New("MaxResponseBody must not be negative")
+	case c.MaxResponseBody > 0:
+		maxBody = c.MaxResponseBody
+	}
+
 	conn, err := c.dial(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -691,11 +711,14 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn,
 		c.OnConnect(conn.Conn)
 	}
 
-	var transport http.RoundTripper = &http.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return conn.Conn, nil
+	var transport http.RoundTripper = &boundResponses{
+		next: &http.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return conn.Conn, nil
+			},
+			DisableKeepAlives: c.DisableKeepAlives,
 		},
-		DisableKeepAlives: c.DisableKeepAlives,
+		max: maxBody,
 	}
 	if c.WrapTransport != nil {
 		transport = c.WrapTransport(transport)
