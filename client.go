@@ -16,6 +16,7 @@ limitations under the License.
 package est
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -29,6 +30,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +102,17 @@ type Client struct {
 
 	// DisableKeepAlives disables HTTP keep-alives if set.
 	DisableKeepAlives bool
+
+	// Proxy returns the proxy for the connection to the EST server, as
+	// http.Transport.Proxy does, or nil for a direct connection. If Proxy
+	// is nil, http.ProxyFromEnvironment applies, so the HTTPS_PROXY and
+	// NO_PROXY environment variables choose the proxy. The client reaches
+	// the server through an http or https proxy with a CONNECT tunnel, so
+	// the TLS handshake, OnConnect and the tls-unique value work as without
+	// a proxy. The user information of the proxy URL is sent as Basic
+	// Proxy-Authorization. An https proxy is checked against the system
+	// roots.
+	Proxy func(*http.Request) (*url.URL, error)
 
 	// InsecureSkipVerify controls whether the client verifies the EST server's
 	// certificate chain and host name. If true, the client accepts any
@@ -682,13 +695,134 @@ func (c *Client) makeHTTPClient(ctx context.Context) (*http.Client, *clientConn,
 	return &http.Client{Transport: transport}, conn, nil
 }
 
-// dial connects to the EST server and completes the TLS handshake, with
-// TLS-SRP when SRPUsername is set.
+// dial connects to the EST server, through a proxy when one applies, and
+// completes the TLS handshake, with TLS-SRP when SRPUsername is set.
 func (c *Client) dial(ctx context.Context) (*clientConn, error) {
+	raw, err := c.dialTCP(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if c.SRPUsername != "" {
-		return c.dialSRP(ctx)
+		return c.handshakeSRP(ctx, raw)
+	}
+	return c.handshakeTLS(ctx, raw)
+}
+
+// dialTCP opens the TCP connection to the EST server, through a CONNECT
+// tunnel when Proxy or the environment names a proxy.
+func (c *Client) dialTCP(ctx context.Context) (net.Conn, error) {
+	proxyURL, err := c.proxyURL(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to choose a proxy: %w", err)
+	}
+	if proxyURL == nil {
+		return (&net.Dialer{}).DialContext(ctx, tcpProtocol, c.Host)
+	}
+	return dialThroughProxy(ctx, proxyURL, c.Host)
+}
+
+// proxyURL returns the proxy for the EST server, or nil for a direct
+// connection.
+func (c *Client) proxyURL(ctx context.Context) (*url.URL, error) {
+	proxy := c.Proxy
+	if proxy == nil {
+		proxy = http.ProxyFromEnvironment
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.uri(""), nil)
+	if err != nil {
+		return nil, err
+	}
+	return proxy(req)
+}
+
+// dialThroughProxy connects to proxyURL and asks it for a CONNECT tunnel to
+// target. An https proxy is reached over TLS and checked against the system
+// roots. The user information of proxyURL is sent as Basic
+// Proxy-Authorization.
+func dialThroughProxy(ctx context.Context, proxyURL *url.URL, target string) (net.Conn, error) {
+	var (
+		addr string
+		conn net.Conn
+		err  error
+	)
+	switch proxyURL.Scheme {
+	case "http":
+		addr = withDefaultPort(proxyURL.Host, "80")
+		conn, err = (&net.Dialer{}).DialContext(ctx, tcpProtocol, addr)
+	case "https":
+		addr = withDefaultPort(proxyURL.Host, "443")
+		dialer := &tls.Dialer{Config: &tls.Config{MinVersion: tls.VersionTLS12}}
+		conn, err = dialer.DialContext(ctx, tcpProtocol, addr)
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme %q, want http or https", proxyURL.Scheme)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to proxy %s: %w", addr, err)
 	}
 
+	// A canceled context closes the connection, which ends the exchange.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	req := &http.Request{
+		Method: http.MethodConnect,
+		URL:    &url.URL{Opaque: target},
+		Host:   target,
+		Header: http.Header{},
+	}
+	if user := proxyURL.User; user != nil {
+		password, _ := user.Password()
+		credentials := base64.StdEncoding.EncodeToString([]byte(user.Username() + ":" + password))
+		req.Header.Set("Proxy-Authorization", "Basic "+credentials)
+	}
+	// fail closes the connection and reports the step that failed, or the
+	// canceled context that closed the connection.
+	fail := func(step string, err error) (net.Conn, error) {
+		_ = conn.Close()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, fmt.Errorf("failed to %s proxy %s: %w", step, addr, err)
+	}
+	if err := req.Write(conn); err != nil {
+		return fail("send CONNECT to", err)
+	}
+	// The tunnel data follows the response headers, so the body is never read or closed.
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req) //nolint:bodyclose
+	if err != nil {
+		return fail("read the CONNECT response of", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = conn.Close()
+		return nil, fmt.Errorf("proxy %s refused the tunnel to %s: %s", addr, target, resp.Status)
+	}
+	if err := ctx.Err(); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// withDefaultPort adds port to addr when it names no port.
+func withDefaultPort(addr, port string) string {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return net.JoinHostPort(addr, port)
+	}
+	return addr
+}
+
+// serverName returns the host of Host without the port, for the TLS server
+// name.
+func (c *Client) serverName() string {
+	host, _, err := net.SplitHostPort(c.Host)
+	if err != nil {
+		return c.Host
+	}
+	return host
+}
+
+// handshakeTLS completes the TLS handshake with the EST server on raw and
+// closes raw when it fails.
+func (c *Client) handshakeTLS(ctx context.Context, raw net.Conn) (*clientConn, error) {
 	var rootCAs *x509.CertPool
 	if c.ExplicitAnchor != nil {
 		rootCAs = c.ExplicitAnchor
@@ -707,33 +841,25 @@ func (c *Client) dial(ctx context.Context) (*clientConn, error) {
 	tlsClientConfig := &tls.Config{
 		RootCAs:      rootCAs,
 		Certificates: tlsCerts,
+		ServerName:   c.serverName(),
 		//nolint:gosec // G402: the caller opts in to fetch /cacerts for out-of-band verification, as the field documents.
 		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 
-	dialer := &tls.Dialer{Config: tlsClientConfig}
-	nc, err := dialer.DialContext(ctx, tcpProtocol, c.Host)
-	if err != nil {
+	conn := tls.Client(raw, tlsClientConfig)
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
 		return nil, err
 	}
-	conn := nc.(*tls.Conn)
 	return &clientConn{Conn: conn, tlsUnique: conn.ConnectionState().TLSUnique}, nil
 }
 
-// dialSRP connects to the EST server and signs in with TLS-SRP.
-func (c *Client) dialSRP(ctx context.Context) (*clientConn, error) {
-	raw, err := (&net.Dialer{}).DialContext(ctx, tcpProtocol, c.Host)
-	if err != nil {
-		return nil, err
-	}
-	host, _, err := net.SplitHostPort(c.Host)
-	if err != nil {
-		host = c.Host
-	}
+// handshakeSRP signs in with TLS-SRP on raw and closes raw when it fails.
+func (c *Client) handshakeSRP(ctx context.Context, raw net.Conn) (*clientConn, error) {
 	conn := srptls.Client(raw, &srptls.Config{
 		Username:     c.SRPUsername,
 		Password:     c.SRPPassword,
-		ServerName:   host,
+		ServerName:   c.serverName(),
 		MinGroupBits: c.SRPMinGroupBits,
 	})
 	if err := conn.HandshakeContext(ctx); err != nil {
