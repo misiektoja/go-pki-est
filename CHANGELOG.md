@@ -16,7 +16,10 @@ host, and signs in with a bearer token.
   are sent as Basic `Proxy-Authorization`.
 - **Bearer tokens.** `Client.BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as
   `Authorization: Bearer <token>` on every request. `Username` takes precedence. A server reads
-  the token from the request in `CheckBasicAuth`.
+  the token from the request in `CheckBasicAuth`. `PasswordRenewal` also accepts a bearer token
+  for `/simplereenroll` without a client certificate.
+- **estclient `-proxy` and `-token`.** The example client connects through an HTTP proxy and
+  signs in with a bearer token. The configuration file takes them as `proxy` and `token`.
 
 ## [1.3.1] - 2026-10-22
 
