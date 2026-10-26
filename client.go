@@ -100,6 +100,11 @@ type Client struct {
 	// Password is an optional HTTP Basic Authentication password.
 	Password string
 
+	// BearerToken is an optional HTTP Bearer authentication token (RFC
+	// 6750). It is sent as "Authorization: Bearer <token>" when Username is
+	// empty, so Basic authentication takes precedence.
+	BearerToken string
+
 	// DisableKeepAlives disables HTTP keep-alives if set.
 	DisableKeepAlives bool
 
@@ -545,8 +550,11 @@ func (c *Client) newRequest(
 		req.Host = c.HostHeader
 	}
 
-	if c.Username != "" {
+	switch {
+	case c.Username != "":
 		req.SetBasicAuth(c.Username, c.Password)
+	case c.BearerToken != "":
+		req.Header.Set("Authorization", "Bearer "+c.BearerToken)
 	}
 
 	for k, v := range c.AdditionalHeaders {
