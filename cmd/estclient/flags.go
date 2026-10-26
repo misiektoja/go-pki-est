@@ -84,6 +84,7 @@ const (
 	passwordFlag           = "pass"
 	postalCodeFlag         = "postalcode"
 	provinceFlag           = "province"
+	proxyFlag              = "proxy"
 	rootOutFlag            = "rootout"
 	rootsOnlyFlag          = "roots"
 	intermediatesOnlyFlag  = "intermediates"
@@ -93,6 +94,7 @@ const (
 	signingKeyFlag         = "signingkey"
 	streetAddressFlag      = "street"
 	timeoutFlag            = "timeout"
+	tokenFlag              = "token"
 	tpmFlag                = "tpm"
 	urisFlag               = "uris"
 	usernameFlag           = "user"
@@ -104,6 +106,7 @@ const (
 	hostFmt   = "<host:port>"
 	pathFmt   = "<path>"
 	stringFmt = "<string>"
+	urlFmt    = "<url>"
 )
 
 // List of flag names for any command which accepts a set of CSR-generating
@@ -220,6 +223,12 @@ var optDefs = map[string]option{
 		desc:         "HTTP Basic Auth password",
 		defaultValue: "",
 	},
+	proxyFlag: {
+		argFmt:       urlFmt,
+		defaultLabel: "from environment",
+		desc:         "HTTP proxy URL, instead of the one HTTPS_PROXY names",
+		defaultValue: "",
+	},
 	rootOutFlag: {
 		desc: fmt.Sprintf("output the first root CA certificate only; this flag will be deprecated in favor of -%s, "+
 			"which is preferred", rootsOnlyFlag),
@@ -247,6 +256,12 @@ var optDefs = map[string]option{
 	signingKeyFlag: {
 		argFmt:       pathFmt,
 		desc:         "CSR signing key",
+		defaultValue: "",
+	},
+	tokenFlag: {
+		argFmt:       stringFmt,
+		defaultLabel: noneLabel,
+		desc:         "HTTP Bearer Auth token",
 		defaultValue: "",
 	},
 	usernameFlag: {
