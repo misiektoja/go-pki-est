@@ -72,7 +72,7 @@ type ServerConfig struct {
 
 	// PasswordRenewal lets /simplereenroll accept a request without a TLS
 	// client certificate when it carries HTTP Basic credentials with a
-	// username and CheckBasicAuth accepts them. RFC 7030 section 2.3 allows
+	// username, or a bearer token, and CheckBasicAuth accepts them. RFC 7030 section 2.3 allows
 	// this when the certificate being renewed cannot be used for TLS client
 	// authentication, such as a composite ML-DSA certificate. The CA receives
 	// a nil certificate and decides which certificate is renewed. NewRouter
@@ -250,13 +250,28 @@ func sendTransferEncoding(ctx context.Context) bool {
 }
 
 // passwordRenewal reports whether a renewal request without a client
-// certificate signs in with the HTTP Basic credentials CheckBasicAuth accepted.
-// An empty username is refused, because CheckBasicAuth also runs for requests
-// without credentials.
+// certificate signs in with the HTTP Basic credentials or the bearer token
+// CheckBasicAuth accepted. An empty username and a missing token are refused,
+// because CheckBasicAuth also runs for requests without credentials.
 func passwordRenewal(r *http.Request) bool {
 	enabled, _ := r.Context().Value(ctxKeyPasswordRenewal).(bool)
-	username, _, ok := r.BasicAuth()
-	return enabled && ok && username != ""
+	if !enabled {
+		return false
+	}
+	if username, _, ok := r.BasicAuth(); ok && username != "" {
+		return true
+	}
+	return bearerToken(r) != ""
+}
+
+// bearerToken returns the token of an "Authorization: Bearer" header, or ""
+// when the request carries none.
+func bearerToken(r *http.Request) string {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
 // NewRouter creates a new EST server mux.
@@ -431,7 +446,8 @@ func enroll(w http.ResponseWriter, r *http.Request) {
 	renew := isReenroll(ctx)
 
 	// A client that sent no certificate and signed in with TLS-SRP or with a
-	// password under PasswordRenewal has nothing to compare the request with.
+	// password or a bearer token under PasswordRenewal has nothing to compare
+	// the request with.
 	// The choice of the certificate being renewed is left to the CA. libest
 	// does the same for TLS-SRP.
 	noCert := r.TLS == nil || len(r.TLS.PeerCertificates) == 0
