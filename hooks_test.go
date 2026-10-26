@@ -661,6 +661,20 @@ func TestMaxRequestBody(t *testing.T) {
 	}
 }
 
+// TestNegativeRateLimit checks that NewRouter refuses a negative RateLimit instead of serving
+// without any limit, which rate.Every makes of a negative interval.
+func TestNegativeRateLimit(t *testing.T) {
+	t.Parallel()
+
+	ca, err := mockca.NewTransient()
+	if err != nil {
+		t.Fatalf("failed to create mock CA: %v", err)
+	}
+	if _, err := est.NewRouter(&est.ServerConfig{CA: ca, RateLimit: -1}); err == nil {
+		t.Fatal("negative RateLimit accepted")
+	}
+}
+
 // oneAsymmetricKey is the PKCS#8 structure used to build keys crypto/x509 cannot parse.
 type oneAsymmetricKey struct {
 	Version    int
