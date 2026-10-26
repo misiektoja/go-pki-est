@@ -3,6 +3,18 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.4.0] - TBD
+
+The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
+host.
+
+### Added
+- **HTTP proxies.** `Client.Proxy` chooses the proxy for the connection to the EST server, like
+  `http.Transport.Proxy`. When it is nil, `HTTPS_PROXY` and `NO_PROXY` apply, where no proxy was
+  used before. The client tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP,
+  `OnConnect` and the `tls-unique` value work as without a proxy. Credentials in the proxy URL
+  are sent as Basic `Proxy-Authorization`.
+
 ## [1.3.1] - 2026-10-22
 
 The client sends the length of every request body, so it can enroll with servers that cannot
@@ -167,6 +179,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.4.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.0
 [1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
 [1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
 [1.2.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.2.0
