@@ -43,7 +43,9 @@ import (
 )
 
 const (
-	defaultListenAddr   = ":8443"
+	// defaultListenAddr serves the local host only. The mock CA issues a
+	// certificate to anyone, so another address must be chosen on purpose.
+	defaultListenAddr   = "localhost:8443"
 	healthCheckUsername = "healthcheck"
 	healthCheckEndpoint = "/healthcheck"
 
