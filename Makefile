@@ -125,6 +125,16 @@ actionlint: actionlint-tool ## Lint the GitHub Actions workflows.
 govulncheck: govulncheck-tool ## Report known vulnerabilities that reach the module or its dependencies.
 	"$(GOVULNCHECK)" ./...
 
+# GITLEAKS_LOG_OPTS selects the history the commit scan walks.
+GITLEAKS_LOG_OPTS ?= --full-history --all
+
+.PHONY: gitleaks
+gitleaks: gitleaks-tool ## Scan the working tree and the commit history for leaked credentials.
+# Excluded artifact paths must not contain tracked files.
+	@test -z "$$(git ls-files .cache dist)" || { echo "error: tracked files are excluded from the gitleaks scan by .gitleaks.toml"; exit 1; }
+	"$(GITLEAKS)" dir . --config .gitleaks.toml --redact --no-banner
+	"$(GITLEAKS)" git . --config .gitleaks.toml --redact --no-banner --log-opts="$(GITLEAKS_LOG_OPTS)"
+
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -135,12 +145,14 @@ $(LOCALBIN):
 ## Tool Binaries
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck
+GITLEAKS ?= $(LOCALBIN)/gitleaks
 ACTIONLINT ?= $(LOCALBIN)/actionlint
 CYCLONEDX_GOMOD ?= $(LOCALBIN)/cyclonedx-gomod
 
 ## Tool Versions
 GOLANGCI_LINT_VERSION ?= v2.14.0
 GOVULNCHECK_VERSION ?= v1.7.0
+GITLEAKS_VERSION ?= v8.30.1
 ACTIONLINT_VERSION ?= v1.7.12
 CYCLONEDX_GOMOD_VERSION ?= v1.11.0
 
@@ -151,6 +163,10 @@ golangci-lint: | $(LOCALBIN) ## Download golangci-lint locally if necessary.
 .PHONY: govulncheck-tool
 govulncheck-tool: | $(LOCALBIN) ## Download govulncheck locally if necessary.
 	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: gitleaks-tool
+gitleaks-tool: | $(LOCALBIN) ## Download gitleaks locally if necessary.
+	$(call go-install-tool,$(GITLEAKS),github.com/zricethezav/gitleaks/v8,$(GITLEAKS_VERSION))
 
 .PHONY: actionlint-tool
 actionlint-tool: | $(LOCALBIN) ## Download actionlint locally if necessary.

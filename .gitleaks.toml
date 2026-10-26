@@ -1,0 +1,28 @@
+title = "go-pki-est"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Paths that never enter the repository or that hold build output only"
+paths = [
+  # Ignored directories checked for tracked files by the gitleaks Make target.
+  '''^\.cache/''',
+  '''^dist/''',
+  # Downloaded tool binaries.
+  '''^bin/''',
+]
+
+[[allowlists]]
+description = "Throwaway RSA key the estclient configuration tests load from testdata"
+targetRules = ["private-key"]
+paths = [
+  '''^cmd/estclient/testdata/test_key\.pem$''',
+]
+
+[[allowlists]]
+description = "Sample keys inlined by a globalsign/est commit and removed upstream before v1.0.7"
+targetRules = ["private-key"]
+commits = [
+  "ca51648175cca10c782701f4acc9afbbec471c2f",
+]
