@@ -3,68 +3,47 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
-## [1.4.0] - TBD
+## [1.4.0] - 2026-10-26
 
-The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
-host, and signs in with a bearer token. It refuses redirects that could carry its credentials to
-an `http` URL and bounds response bodies. The server checks bearer tokens with a new hook and
-bounds the CA certificate cache, which a peer could grow without limit. `estserver` listens on
-localhost by default and `estclient` does not write through symbolic links.
+The client connects through HTTP proxies and signs in with bearer tokens, which the server checks
+with a new hook. The client refuses redirects and bounds response bodies. The server bounds its
+CA certificate cache. `estserver` listens on localhost by default.
 
 ### Added
-- **HTTP proxies.** `Client.Proxy` chooses the proxy for the connection to the EST server, like
-  `http.Transport.Proxy`. When it is nil, `HTTPS_PROXY` and `NO_PROXY` apply, where no proxy was
-  used before. The client tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP,
-  `OnConnect` and the `tls-unique` value work as without a proxy. Credentials in the proxy URL
-  are sent as Basic `Proxy-Authorization`.
-- **Bearer tokens.** `Client.BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as
-  `Authorization: Bearer <token>` on every request. `Username` takes precedence. A server checks
-  the token with `ServerConfig.CheckBearerToken`, which runs in place of `CheckBasicAuth` for a
-  request that carries one and answers 401 with a Bearer challenge. `PasswordRenewal` also
-  accepts a bearer token that hook accepted for `/simplereenroll` without a client certificate.
-  Without the hook a token is not checked and does not sign a client in.
-- **estclient `-proxy` and `-token`.** The example client connects through an HTTP proxy and
-  signs in with a bearer token. The configuration file takes them as `proxy` and `token`.
+- **HTTP proxies.** `Client.Proxy` chooses the proxy, like `http.Transport.Proxy`. When it is nil,
+  the client now uses `HTTPS_PROXY` and `NO_PROXY`. TLS-SRP and the `tls-unique` value work
+  through the proxy.
+- **Bearer tokens.** `Client.BearerToken` sends `Authorization: Bearer <token>` (RFC 6750).
+  `Username` takes precedence. The server checks the token with `ServerConfig.CheckBearerToken`
+  in place of `CheckBasicAuth`. Without that hook a token does not sign a client in.
+  `PasswordRenewal` also accepts a bearer token that the hook accepted.
+- **estclient `-proxy` and `-token`** set the proxy and bearer token. The configuration file takes
+  them as `proxy` and `token`.
 
 ### Changed
-- **`estserver` listens on `localhost:8443` by default.** It listened on every interface with a
-  mock CA that issues a certificate to anyone. Set `listen_address` in the `tls` section to serve
-  other hosts.
-- **`CA.Reenroll` documentation** states that the server does not check revocation and that a
-  CA must choose the certificate of a login renewal by the signed-in identity, not by the CSR
-  subject.
+- **`estserver` listens on `localhost:8443` by default.** It served its mock CA on every interface
+  before. Set `listen_address` in the `tls` section to serve other hosts.
+- **`CA.Reenroll` documentation** says that the server does not check revocation and that a CA
+  must match a login renewal to the signed-in identity, not to the CSR subject.
 
 ### Fixed
-- **Server error messages are safe to print.** The client passed the error message of a server
-  response on unchanged, so a malicious server could send terminal escape sequences that
-  `estclient` printed. Control characters other than newline and tab are now escaped, such as
-  `\x1b`.
-- **The client refuses redirects.** It followed up to ten redirects and resent its Basic
-  credentials or bearer token to an `http` URL on the same host in cleartext, without the proxy
-  settings. RFC 7030 section 3.2.1 allows only redirects within the same origin and the client
-  talks to the one server it was configured with, so a 3xx answer is now returned as an error
-  with its status.
-- **Response bodies are bounded.** The client read every response whole, so a server could make
-  it allocate memory without limit. A 13 MB response of nested PKCS#7 structures ended the
-  process with a stack overflow. **`Client.MaxResponseBody`** bounds a response body, including
-  an error message and the parts of a multipart response. The default is 1 MiB. For the same
-  reason a server's `MaxRequestBody` should stay below 4 MiB, because `/tpmenroll` decodes a
-  PKCS#7 part.
-- **The CA certificate cache is bounded.** The server kept the `/cacerts` result of every
-  additional path segment a client named, with no limit on their number or length. When the CA
-  answers unknown segments, as the mock CA does, a peer could grow the server's memory with one
-  request per segment until the process died. A segment may now be at most 255 bytes and a longer
-  one answers 414. The cache keeps at most 1024 segments and drops the least recently updated one
-  first.
-- **A negative `RateLimit` is refused.** `NewRouter` served without any rate limit for a negative
-  value. It now returns an error, as it does for a negative `MaxRequestBody`.
-- **`estserver` drops slow and idle connections.** A client could hold a connection and its
-  handler by sending the request body slowly or hold a keep-alive connection without sending a
-  request. The TLS and TLS-SRP listeners now give a request 60 seconds to arrive and close an
-  idle connection after 120 seconds.
-- **`estclient` does not write through symbolic links.** `-out`, `-keyout` and `-separateout`
-  followed a symbolic link, so a link planted in a shared directory could send a private key or
-  certificate to another file. A link is now refused with an error that names it.
+- **Server error messages are escaped.** Control characters other than newline and tab appear as
+  escapes such as `\x1b`, so a malicious server cannot send terminal escape sequences through
+  `estclient`.
+- **The client refuses redirects.** It followed them and could resend its credentials in
+  cleartext to an `http` URL. A 3xx answer is now returned as an error.
+- **Response bodies are bounded by `Client.MaxResponseBody`**, 1 MiB by default. A crafted
+  response could exhaust memory or crash the client. For the same reason keep a server's
+  `MaxRequestBody` below 4 MiB.
+- **The CA certificate cache is bounded.** A peer could grow server memory without limit by
+  naming many `/cacerts` path segments. A segment longer than 255 bytes now answers 414 and the
+  cache keeps at most 1024 segments.
+- **A negative `RateLimit` is refused.** `NewRouter` returns an error instead of serving without
+  a limit.
+- **`estserver` drops slow and idle connections.** A request must arrive within 60 seconds and an
+  idle connection closes after 120 seconds.
+- **`estclient` refuses symbolic links as output files.** `-out`, `-keyout` and `-separateout`
+  followed them, so a planted link could send a private key to another file.
 
 ## [1.3.1] - 2026-10-22
 
