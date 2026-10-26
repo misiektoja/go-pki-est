@@ -30,8 +30,15 @@ localhost by default and `estclient` does not write through symbolic links.
 - **`estserver` listens on `localhost:8443` by default.** It listened on every interface with a
   mock CA that issues a certificate to anyone. Set `listen_address` in the `tls` section to serve
   other hosts.
+- **`CA.Reenroll` documentation** states that the server does not check revocation and that a
+  CA must choose the certificate of a login renewal by the signed-in identity, not by the CSR
+  subject.
 
 ### Fixed
+- **Server error messages are safe to print.** The client passed the error message of a server
+  response on unchanged, so a malicious server could send terminal escape sequences that
+  `estclient` printed. Control characters other than newline and tab are now escaped, such as
+  `\x1b`.
 - **The client refuses redirects.** It followed up to ten redirects and resent its Basic
   credentials or bearer token to an `http` URL on the same host in cleartext, without the proxy
   settings. RFC 7030 section 3.2.1 allows only redirects within the same origin and the client
