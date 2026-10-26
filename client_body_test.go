@@ -181,3 +181,33 @@ func TestClientMaxResponseBodyErrorMessage(t *testing.T) {
 		t.Errorf("got error %q, want the body limit and none of the message", err)
 	}
 }
+
+// TestClientErrorMessageEscapesControls checks that control characters in a server's error
+// message are escaped, so a malicious server cannot send terminal escape sequences to whoever
+// prints the error. Newlines and tabs stay.
+func TestClientErrorMessageEscapesControls(t *testing.T) {
+	t.Parallel()
+
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, "bad\x1b[31m request\r\n\tdetail\x7f\u0085")
+	}))
+	defer s.Close()
+
+	pool := x509.NewCertPool()
+	pool.AddCert(s.Certificate())
+	client := &est.Client{Host: strings.TrimPrefix(s.URL, "https://"), ExplicitAnchor: pool}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	_, err := client.CACerts(ctx)
+	var estErr est.Error
+	if !errors.As(err, &estErr) || estErr.StatusCode() != http.StatusBadRequest {
+		t.Fatalf("CACerts returned %v, want an error with status 400", err)
+	}
+	if want := `bad\x1b[31m request\x0d` + "\n\tdetail" + `\x7f\x85`; err.Error() != want {
+		t.Errorf("got message %q, want %q", err.Error(), want)
+	}
+}
