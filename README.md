@@ -166,7 +166,8 @@ fields hand decisions to the host:
   against `/cacerts`, for certificates `crypto/x509` cannot verify, such as those an SLH-DSA CA
   signed. The Subject and SubjectAltName comparison still runs first.
 * `Refusals` reports requests refused before they reach the CA, for audit records or rate limits.
-* `PasswordRenewal` lets `/simplereenroll` accept a password instead of a client certificate, as
+* `PasswordRenewal` lets `/simplereenroll` accept a password or a bearer token instead of a client
+  certificate, as
   RFC 7030 section 2.3 allows. It is off by default.
 * `OmitTransferEncoding` drops the `Content-Transfer-Encoding` header for clients that reject it.
 * `OmitStrictTransportSecurity` drops the `Strict-Transport-Security` header, so the host can send
