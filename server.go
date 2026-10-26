@@ -58,25 +58,38 @@ type ServerConfig struct {
 	RateLimit int
 
 	// CheckBasicAuth is an optional callback function to check HTTP Basic
-	// Authentication credentials. It runs for every enrollment request, with
-	// empty credentials when the request has no Authorization header, so it
-	// can also accept a TLS client certificate from the request. A nil error
-	// means that authentication was successful. An error that implements Error
-	// with a status other than 401, such as 403 or 429, is sent as is with its
+	// Authentication credentials. It runs for every enrollment request that
+	// CheckBearerToken does not check, with empty credentials when the
+	// request carries no HTTP Basic credentials, so it can also accept a TLS
+	// client certificate from the request. A nil error means that
+	// authentication was successful. An error that implements Error with a
+	// status other than 401, such as 403 or 429, is sent as is with its
 	// Retry-After value. Any other error answers 401 with a Basic challenge.
 	// On a TLS-SRP connection, SRPUsernameFromContext(ctx) returns the
 	// username the client signed in with. If CheckBasicAuth is nil, then HTTP
-	// Basic Authentication is not required for any EST operation, but access to
-	// the /healthcheck endpoint will be blocked.
+	// Basic Authentication is not required for any EST operation. The
+	// /healthcheck endpoint then only answers a request CheckBearerToken
+	// accepts.
 	CheckBasicAuth func(ctx context.Context, r *http.Request, aps, username, password string) error
+
+	// CheckBearerToken is an optional callback function to check the token of
+	// an "Authorization: Bearer" header (RFC 6750). It runs in place of
+	// CheckBasicAuth for every request that carries one. Its errors are
+	// handled like those of CheckBasicAuth. The 401 answer also carries a
+	// Bearer challenge. If CheckBearerToken is nil, a bearer token is not
+	// checked: CheckBasicAuth runs with empty credentials, as for a request
+	// without an Authorization header. The token then does not sign the
+	// client in for PasswordRenewal.
+	CheckBearerToken func(ctx context.Context, r *http.Request, aps, token string) error
 
 	// PasswordRenewal lets /simplereenroll accept a request without a TLS
 	// client certificate when it carries HTTP Basic credentials with a
-	// username, or a bearer token, and CheckBasicAuth accepts them. RFC 7030 section 2.3 allows
-	// this when the certificate being renewed cannot be used for TLS client
-	// authentication, such as a composite ML-DSA certificate. The CA receives
-	// a nil certificate and decides which certificate is renewed. NewRouter
-	// refuses it without CheckBasicAuth. It defaults to false.
+	// username that CheckBasicAuth accepted or a bearer token that
+	// CheckBearerToken accepted. RFC 7030 section 2.3 allows this when the
+	// certificate being renewed cannot be used for TLS client authentication,
+	// such as a composite ML-DSA certificate. The CA receives a nil
+	// certificate and decides which certificate is renewed. NewRouter refuses
+	// it without CheckBasicAuth or CheckBearerToken. It defaults to false.
 	PasswordRenewal bool
 
 	// CheckCSRSignature optionally verifies the signature of each PKCS#10
@@ -144,6 +157,17 @@ const (
 	ctxKeySRPUsername
 	ctxKeyPasswordRenewal
 	ctxKeyClientCertCheck
+	ctxKeyLogin
+)
+
+// login identifies the credential the host accepted for a request.
+type login int
+
+// Credentials a host can accept.
+const (
+	loginNone login = iota
+	loginBasic
+	loginBearer
 )
 
 // Server constants.
@@ -250,18 +274,15 @@ func sendTransferEncoding(ctx context.Context) bool {
 }
 
 // passwordRenewal reports whether a renewal request without a client
-// certificate signs in with the HTTP Basic credentials or the bearer token
-// CheckBasicAuth accepted. An empty username and a missing token are refused,
-// because CheckBasicAuth also runs for requests without credentials.
+// certificate signed in with HTTP Basic credentials that CheckBasicAuth
+// accepted or a bearer token that CheckBearerToken accepted. Only the
+// credential requireAuth recorded counts. A bearer token without
+// CheckBearerToken does not, because CheckBasicAuth then runs with empty
+// credentials, which it also accepts for requests without credentials.
 func passwordRenewal(r *http.Request) bool {
 	enabled, _ := r.Context().Value(ctxKeyPasswordRenewal).(bool)
-	if !enabled {
-		return false
-	}
-	if username, _, ok := r.BasicAuth(); ok && username != "" {
-		return true
-	}
-	return bearerToken(r) != ""
+	accepted, _ := r.Context().Value(ctxKeyLogin).(login)
+	return enabled && accepted != loginNone
 }
 
 // bearerToken returns the token of an "Authorization: Bearer" header, or ""
@@ -276,8 +297,8 @@ func bearerToken(r *http.Request) string {
 
 // NewRouter creates a new EST server mux.
 func NewRouter(cfg *ServerConfig) (http.Handler, error) {
-	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil {
-		return nil, errors.New("PasswordRenewal requires CheckBasicAuth")
+	if cfg.PasswordRenewal && cfg.CheckBasicAuth == nil && cfg.CheckBearerToken == nil {
+		return nil, errors.New("PasswordRenewal requires CheckBasicAuth or CheckBearerToken")
 	}
 	if cfg.MaxRequestBody < 0 {
 		return nil, errors.New("MaxRequestBody must not be negative")
@@ -328,7 +349,7 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 
 	// Non-EST endpoints.
 	r.With(
-		requireBasicAuth(cfg.CheckBasicAuth, false),
+		requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, false),
 	).Get("/healthcheck", healthcheck)
 
 	// EST endpoints.
@@ -339,13 +360,13 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 		r.With(
 			requireContentType(mimeTypePKCS10),
 		).With(
-			requireBasicAuth(cfg.CheckBasicAuth, true),
+			requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 		).Post(enrollEndpoint, enroll)
 
 		r.With(
 			requireContentType(mimeTypePKCS10),
 		).With(
-			requireBasicAuth(cfg.CheckBasicAuth, true),
+			requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 		).With(
 			middleware.WithValue(ctxKeyReenroll, true),
 		).Post(reenrollEndpoint, enroll)
@@ -353,13 +374,13 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 		r.With(
 			requireContentType(mimeTypePKCS10),
 		).With(
-			requireBasicAuth(cfg.CheckBasicAuth, true),
+			requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 		).Post(serverkeygenEndpoint, serverkeygen)
 
 		r.With(
 			requireContentType(mimeTypeMultipart),
 		).With(
-			requireBasicAuth(cfg.CheckBasicAuth, true),
+			requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 		).Post(tpmenrollEndpoint, tpmenroll)
 
 		// Endpoints with additional path segment.
@@ -370,13 +391,13 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 			r.With(
 				requireContentType(mimeTypePKCS10),
 			).With(
-				requireBasicAuth(cfg.CheckBasicAuth, true),
+				requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 			).Post(enrollEndpoint, enroll)
 
 			r.With(
 				requireContentType(mimeTypePKCS10),
 			).With(
-				requireBasicAuth(cfg.CheckBasicAuth, true),
+				requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 			).With(
 				middleware.WithValue(ctxKeyReenroll, true),
 			).Post(reenrollEndpoint, enroll)
@@ -384,13 +405,13 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 			r.With(
 				requireContentType(mimeTypePKCS10),
 			).With(
-				requireBasicAuth(cfg.CheckBasicAuth, true),
+				requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 			).Post(serverkeygenEndpoint, serverkeygen)
 
 			r.With(
 				requireContentType(mimeTypeMultipart),
 			).With(
-				requireBasicAuth(cfg.CheckBasicAuth, true),
+				requireAuth(cfg.CheckBasicAuth, cfg.CheckBearerToken, true),
 			).Post(tpmenrollEndpoint, tpmenroll)
 		})
 	})
@@ -910,34 +931,47 @@ func maxBodySize(sz int64) func(next http.Handler) http.Handler {
 	}
 }
 
-// requireBasicAuth is middleware which optionally requires HTTP Basic
-// Authentication. If checkFunc is nil, authentication will succeed if and
-// only if optional is true. An Error from checkFunc with a status other than
-// 401 is sent as is, so the host can refuse with 403 or ask for a retry with
-// 429.
-func requireBasicAuth(
-	checkFunc func(context.Context, *http.Request, string, string, string) error,
-	optional bool,
-) func(next http.Handler) http.Handler {
+// requireAuth is middleware which optionally requires HTTP Basic or bearer
+// authentication. A request with a bearer token is checked by checkBearer when
+// it is set, every other request by checkBasic when it is set. Without a
+// check, authentication succeeds if and only if optional is true. An Error
+// from a check with a status other than 401 is sent as is, so the host can
+// refuse with 403 or ask for a retry with 429. The credential a check
+// accepted is recorded in the request context for passwordRenewal.
+func requireAuth(checkBasic func(context.Context, *http.Request, string, string, string) error, checkBearer func(context.Context, *http.Request, string, string) error, optional bool) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authenticated := false
+			ctx := r.Context()
+			aps := chi.URLParam(r, apsParamName)
+			token := bearerToken(r)
 
-			if checkFunc != nil {
-				aps := chi.URLParam(r, apsParamName)
-				username, password, _ := r.BasicAuth()
-				err := checkFunc(r.Context(), r, aps, username, password)
-				if err == nil {
-					authenticated = true
-				} else {
-					var estErr Error
-					if errors.As(err, &estErr) && estErr.StatusCode() != http.StatusUnauthorized {
-						writeOnError(r.Context(), w, logMsgAuthFailed, err)
-						return
-					}
+			var err error
+			authenticated := optional
+			accepted := loginNone
+
+			switch {
+			case token != "" && checkBearer != nil:
+				err = checkBearer(ctx, r, aps, token)
+				authenticated = err == nil
+				if authenticated {
+					accepted = loginBearer
 				}
-			} else if optional {
-				authenticated = true
+
+			case checkBasic != nil:
+				username, password, _ := r.BasicAuth()
+				err = checkBasic(ctx, r, aps, username, password)
+				authenticated = err == nil
+				if authenticated && username != "" {
+					accepted = loginBasic
+				}
+			}
+
+			if err != nil {
+				var estErr Error
+				if errors.As(err, &estErr) && estErr.StatusCode() != http.StatusUnauthorized {
+					writeOnError(ctx, w, logMsgAuthFailed, err)
+					return
+				}
 			}
 
 			if !authenticated {
@@ -945,16 +979,32 @@ func requireBasicAuth(
 				if host, _, err := net.SplitHostPort(reqHost); err == nil {
 					reqHost = host
 				}
+				realm := fmt.Sprintf(`realm="estserver@%s"`, url.QueryEscape(reqHost))
 
 				// The entry is set directly so HTTP/1.1 sends the RFC 9110 spelling. libest compares
 				// header names case-sensitively and ignores Go's canonical Www-Authenticate. As a
-				// result, Header().Get does not find the entry.
-				w.Header()[wwwAuthenticateHeader] = []string{fmt.Sprintf(`Basic realm="estserver@%s"`,
-					url.QueryEscape(reqHost))}
+				// result, Header().Get does not find the entry. The Bearer challenge goes on its own
+				// line (RFC 6750 section 3), so the Basic one stays as libest expects it.
+				var challenges []string
+				if checkBasic != nil || checkBearer == nil {
+					challenges = append(challenges, "Basic "+realm)
+				}
+				if checkBearer != nil {
+					challenge := "Bearer " + realm
+					if token != "" {
+						challenge += `, error="invalid_token"`
+					}
+					challenges = append(challenges, challenge)
+				}
+				w.Header()[wwwAuthenticateHeader] = challenges
 				// The challenge carries no content. Bouncy Castle closes it without reading and fails
 				// when content is left unread.
 				w.WriteHeader(http.StatusUnauthorized)
 				return
+			}
+
+			if accepted != loginNone {
+				r = r.WithContext(context.WithValue(ctx, ctxKeyLogin, accepted))
 			}
 
 			next.ServeHTTP(w, r)
