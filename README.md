@@ -50,14 +50,14 @@ provenance bundle. Check a downloaded file against the checksums and confirm tha
 workflow of this repository built it:
 
 ```bash
-shasum -a 256 -c go-pki-est-v1.3.1_SHA256SUMS.txt
+shasum -a 256 -c go-pki-est-v1.4.0_SHA256SUMS.txt
 ```
 
 ```bash
-gh attestation verify go-pki-est-v1.3.1-source.tar.gz --repo misiektoja/go-pki-est
+gh attestation verify go-pki-est-v1.4.0-source.tar.gz --repo misiektoja/go-pki-est
 ```
 
-To verify offline, add `--bundle go-pki-est-v1.3.1.intoto.jsonl`.
+To verify offline, add `--bundle go-pki-est-v1.4.0.intoto.jsonl`.
 
 ## Quickstart
 
