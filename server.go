@@ -54,7 +54,8 @@ type ServerConfig struct {
 	AllowedHosts []string
 
 	// RateLimit is an optional rate limit expressed in requests per second.
-	// If zero, no rate limit will be applied.
+	// If zero, no rate limit will be applied. NewRouter refuses a negative
+	// value.
 	RateLimit int
 
 	// CheckBasicAuth is an optional callback function to check HTTP Basic
@@ -313,6 +314,10 @@ func NewRouter(cfg *ServerConfig) (http.Handler, error) {
 	}
 	if cfg.MaxRequestBody < 0 {
 		return nil, errors.New("MaxRequestBody must not be negative")
+	}
+	// rate.Every turns a negative interval into no limit at all.
+	if cfg.RateLimit < 0 {
+		return nil, errors.New("RateLimit must not be negative")
 	}
 
 	r := chi.NewRouter()
