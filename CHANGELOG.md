@@ -6,7 +6,7 @@ Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 ## [1.4.0] - TBD
 
 The client connects through an HTTP proxy, from the environment or a `Proxy` function of the
-host.
+host, and signs in with a bearer token.
 
 ### Added
 - **HTTP proxies.** `Client.Proxy` chooses the proxy for the connection to the EST server, like
@@ -14,6 +14,9 @@ host.
   used before. The client tunnels through an `http` or `https` proxy with `CONNECT`, so TLS-SRP,
   `OnConnect` and the `tls-unique` value work as without a proxy. Credentials in the proxy URL
   are sent as Basic `Proxy-Authorization`.
+- **Bearer tokens.** `Client.BearerToken` signs in with an HTTP bearer token (RFC 6750), sent as
+  `Authorization: Bearer <token>` on every request. `Username` takes precedence. A server reads
+  the token from the request in `CheckBasicAuth`.
 
 ## [1.3.1] - 2026-10-22
 
