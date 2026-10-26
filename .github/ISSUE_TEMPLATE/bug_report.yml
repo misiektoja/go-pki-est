@@ -1,0 +1,63 @@
+name: Bug report
+description: Enrollment fails against a peer, the client or server misbehaves, or behavior does not match the documentation or an RFC
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/go-pki-est/blob/main/SECURITY.md) instead.
+
+        Never paste enrollment passwords, bearer tokens, private keys or full CSRs into an issue.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead. Cite the RFC section when the library deviates from it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The steps, the relevant `Client` or `ServerConfig` fields, or the `estclient` command. Redact hostnames and credentials.
+      render: go
+    validations:
+      required: true
+
+  - type: textarea
+    id: response
+    attributes:
+      label: Error and log
+      description: The HTTP status and error message the client received and the server log lines around it.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: go-pki-est version
+      placeholder: v1.3.1 or commit
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Go version and EST peer
+      description: The other side of the exchange and its version, such as libest, an EST server product or estclient.
+      placeholder: go1.27.3, libest 3.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: keys
+    attributes:
+      label: Keys and sign-in
+      description: The key algorithm, where the key lives and how the client signs in.
+      placeholder: ML-DSA-65 software key, client certificate over TLS 1.3
+    validations:
+      required: false
