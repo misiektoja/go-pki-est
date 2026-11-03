@@ -154,7 +154,7 @@ type Client struct {
 	// an error message and all parts of a multipart response. A larger
 	// response fails the operation. If zero, 1 MiB is used. A chain of large
 	// post-quantum CA certificates can exceed that, such as SLH-DSA-SHA2-256f
-	// certificates at about 50 KB each in base64. A negative value fails
+	// certificates at about 67 KB each in base64. A negative value fails
 	// every operation.
 	MaxResponseBody int64
 
