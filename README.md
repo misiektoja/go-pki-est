@@ -17,6 +17,8 @@ defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 * `estserver`, a server with a mock CA for testing and development
 <!-- --8<-- [end:intro] -->
 
+The documentation is at [misiektoja.github.io/go-pki-est](https://misiektoja.github.io/go-pki-est/).
+
 ## Contents
 
 * [Install](#install)

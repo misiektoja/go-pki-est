@@ -1,7 +1,8 @@
 # Getting help
 
-Start with the [README](README.md), which covers the client, the embeddable server and the limits
-of the post-quantum algorithms. The package documentation on
+Start with the [documentation site](https://misiektoja.github.io/go-pki-est/) or the
+[README](README.md), which cover the client, the embeddable server and the limits of the
+post-quantum algorithms. The package documentation on
 [pkg.go.dev](https://pkg.go.dev/github.com/misiektoja/go-pki-est) describes every exported type.
 The command line tools are described in [cmd/estclient](cmd/estclient/README.md) and
 [cmd/estserver](cmd/estserver/README.md).
