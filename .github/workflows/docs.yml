@@ -2,8 +2,8 @@
 #
 # The site is served from the `gh-pages` branch. Every push and pull request that touches the
 # documentation runs the strict build, so a broken link or a page missing from the navigation is
-# reported before it reaches the default branch. Only the default branch publishes. README.md and the
-# command line tool READMEs are sources because the pages include them.
+# reported before it reaches the default branch. Only the default branch publishes. example_test.go
+# is a source because the pages include its Go listings.
 #
 # The build job installs the MkDocs toolchain from PyPI and runs it, so it holds a read-only token.
 # The publish job holds the only write token and runs no third-party code: it receives the built
@@ -16,9 +16,7 @@ on:
     paths:
       - docs/**
       - mkdocs.yml
-      - README.md
-      - cmd/estclient/README.md
-      - cmd/estserver/README.md
+      - example_test.go
       - Makefile
       - .github/workflows/docs.yml
   pull_request:
@@ -26,9 +24,7 @@ on:
     paths:
       - docs/**
       - mkdocs.yml
-      - README.md
-      - cmd/estclient/README.md
-      - cmd/estserver/README.md
+      - example_test.go
       - Makefile
       - .github/workflows/docs.yml
   workflow_dispatch:
