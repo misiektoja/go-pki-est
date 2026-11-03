@@ -1,0 +1,2438 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Go library for Enrollment over Secure Transport (EST, RFC 7030) with a client, an embeddable server, TLS-SRP sign-in and post-quantum ML-DSA keys">
+      
+      
+      
+        <link rel="canonical" href="https://misiektoja.github.io/go-pki-est/tools/estclient/">
+      
+      
+        <link rel="prev" href="../../post-quantum/">
+      
+      
+        <link rel="next" href="../estserver/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>estclient - go-pki-est</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#estclient" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="go-pki-est" class="md-header__button md-logo" aria-label="go-pki-est" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            go-pki-est
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              estclient
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/misiektoja/go-pki-est" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/go-pki-est
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="go-pki-est" class="md-nav__button md-logo" aria-label="go-pki-est" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    go-pki-est
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/misiektoja/go-pki-est" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/go-pki-est
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../support-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Client guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/enrollment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrollment and renewal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connections and hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/tpm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TPM enrollment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Server guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/embedding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding the server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/ca/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The CA interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/tls-srp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS-SRP
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/refusals-and-limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Refusals and limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../post-quantum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-quantum algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Command line tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    estclient
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    estclient
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connection-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cacerts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cacerts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csrattrs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        csrattrs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        csr
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reenroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reenroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverkeygen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        serverkeygen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tpmenroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tpmenroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sampleconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sampleconfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hardware-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tpm-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TPM keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bootstrapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bootstrapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../estserver/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    estserver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/server-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ServerConfig fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/errors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Errors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/verifying-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Verifying a release
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_13" id="__nav_13_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../known-limitations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Known limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connection-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cacerts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cacerts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csrattrs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        csrattrs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        csr
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reenroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reenroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverkeygen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        serverkeygen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tpmenroll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tpmenroll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sampleconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sampleconfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hardware-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tpm-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TPM keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bootstrapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bootstrapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="estclient">estclient<a class="headerlink" href="#estclient" title="Permanent link">&para;</a></h1>
+<p><code>estclient</code> is a command line EST client built on the library. It fetches CA certificates and CSR
+attributes, enrolls, renews and asks the server to generate a key. It signs with keys in files, on
+a PKCS #11 HSM or on a TPM 2.0 device.</p>
+<div class="highlight"><pre><span></span><code>go<span class="w"> </span>install<span class="w"> </span>github.com/misiektoja/go-pki-est/cmd/estclient@latest
+</code></pre></div>
+<p><a href="../../getting-started/">Getting started</a> walks through a full session against <code>estserver</code>.</p>
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>estclient &lt;command&gt; [options]
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Operation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cacerts</code></td>
+<td>Fetch the CA certificates (RFC 7030 section 4.1)</td>
+</tr>
+<tr>
+<td><code>csrattrs</code></td>
+<td>Fetch the CSR attributes the CA wants (section 4.5)</td>
+</tr>
+<tr>
+<td><code>csr</code></td>
+<td>Generate a PKCS #10 request locally, without a server</td>
+</tr>
+<tr>
+<td><code>enroll</code></td>
+<td>Request a new certificate (section 4.2)</td>
+</tr>
+<tr>
+<td><code>reenroll</code></td>
+<td>Renew a certificate (section 4.2)</td>
+</tr>
+<tr>
+<td><code>serverkeygen</code></td>
+<td>Request a key and a certificate from the server (section 4.4)</td>
+</tr>
+<tr>
+<td><code>tpmenroll</code></td>
+<td>Request a certificate for a TPM key, see <a href="#tpmenroll">tpmenroll</a></td>
+</tr>
+<tr>
+<td><code>sampleconfig</code></td>
+<td>Print a sample configuration file</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>Print the version, such as <code>go-pki-est EST client 1.4.0</code></td>
+</tr>
+<tr>
+<td><code>help</code></td>
+<td>Print the command list. <code>estclient help -common</code> describes the common options</td>
+</tr>
+</tbody>
+</table>
+<p><code>estclient &lt;command&gt; -help</code> lists the options of a command. On failure the tool prints
+<code>estclient: &lt;error&gt;</code> to standard error and exits with status 1. An unknown option prints the usage
+of the command and exits with status 2.</p>
+<h2 id="connection-options">Connection options<a class="headerlink" href="#connection-options" title="Permanent link">&para;</a></h2>
+<p>The commands that talk to a server share these options:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-server &lt;host:port&gt;</code></td>
+<td>The EST server. Required, here or in the configuration file</td>
+</tr>
+<tr>
+<td><code>-aps &lt;string&gt;</code></td>
+<td>The additional path segment, such as <code>devices</code> in <code>/.well-known/est/devices/simpleenroll</code></td>
+</tr>
+<tr>
+<td><code>-explicit &lt;path&gt;</code></td>
+<td>PEM file with the CA certificates that verify the server (RFC 7030 section 3.6.1)</td>
+</tr>
+<tr>
+<td><code>-implicit &lt;path&gt;</code></td>
+<td>PEM file used when no explicit anchor is set. Without either, the system roots apply</td>
+</tr>
+<tr>
+<td><code>-insecure</code></td>
+<td>Accept any server certificate. Command line only, see <a href="#bootstrapping">Bootstrapping</a></td>
+</tr>
+<tr>
+<td><code>-certs &lt;path&gt;</code></td>
+<td>PEM file with the TLS client certificate first, then the CA certificates the server needs to build the chain</td>
+</tr>
+<tr>
+<td><code>-key &lt;path&gt;</code></td>
+<td>PEM file with the private key of the client certificate or the key that signs a generated request</td>
+</tr>
+<tr>
+<td><code>-user &lt;string&gt;</code>, <code>-pass &lt;string&gt;</code></td>
+<td>HTTP Basic credentials</td>
+</tr>
+<tr>
+<td><code>-token &lt;string&gt;</code></td>
+<td>HTTP bearer token. <code>-user</code> takes precedence</td>
+</tr>
+<tr>
+<td><code>-headers &lt;string&gt;</code></td>
+<td>Extra HTTP headers as <code>Name:value</code> items, separated by <code>-separator</code></td>
+</tr>
+<tr>
+<td><code>-hostheader &lt;string&gt;</code></td>
+<td>Override the HTTP <code>Host</code> header</td>
+</tr>
+<tr>
+<td><code>-proxy &lt;url&gt;</code></td>
+<td>HTTP or HTTPS proxy. Without it <code>HTTPS_PROXY</code> and <code>NO_PROXY</code> apply</td>
+</tr>
+<tr>
+<td><code>-timeout &lt;duration&gt;</code></td>
+<td>Time limit for the request, 15s by default</td>
+</tr>
+<tr>
+<td><code>-separator &lt;string&gt;</code></td>
+<td>Separator of list values, <code>,</code> by default</td>
+</tr>
+<tr>
+<td><code>-config &lt;path&gt;</code></td>
+<td><a href="#configuration-file">Configuration file</a></td>
+</tr>
+<tr>
+<td><code>-out &lt;path&gt;</code></td>
+<td>Output file. Standard output by default. <code>csrattrs</code> always prints to standard output</td>
+</tr>
+</tbody>
+</table>
+<p>When both anchors are given, only the explicit one is used.</p>
+<h2 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h2>
+<h3 id="cacerts">cacerts<a class="headerlink" href="#cacerts" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>cacerts<span class="w"> </span>-server<span class="w"> </span>est.example.com:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-out<span class="w"> </span>cacerts.pem
+</code></pre></div>
+<p>Writes the CA certificates in PEM, in the order the server sent them. Filters:</p>
+<ul>
+<li><code>-roots</code> keeps the self-signed certificates.</li>
+<li><code>-intermediates</code> keeps all others.</li>
+<li><code>-rootout</code> keeps the first self-signed certificate and fails with
+  <code>failed to find a root certificate in CA certificates</code> when there is none. The help text marks it
+  for deprecation in favor of <code>-roots</code>.</li>
+<li><code>-separate</code> writes each certificate to its own file. With <code>-out chain.pem</code> the files are
+  <code>chain-1.pem</code>, <code>chain-2.pem</code> and so on. Without <code>-out</code> they are <code>ca-1.pem</code>, <code>ca-2.pem</code>.</li>
+</ul>
+<p>Only one of <code>-roots</code>, <code>-intermediates</code> and <code>-rootout</code> may be given.</p>
+<h3 id="csrattrs">csrattrs<a class="headerlink" href="#csrattrs" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>csrattrs<span class="w"> </span>-server<span class="w"> </span>localhost:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-aps<span class="w"> </span>csrattrs
+</code></pre></div>
+<p>Prints each attribute the server asks for. Against <code>estserver</code> with the <code>csrattrs</code> path segment:</p>
+<div class="highlight"><pre><span></span><code>OID     : 1.2.840.113549.1.9.7
+OID     : 1.2.840.10045.4.3.3
+Type    : 1.2.840.113549.1.9.14
+ Value  : 1.3.6.1.1.1.1.22
+Type    : 1.2.840.10045.2.1
+ Value  : 1.3.132.0.34
+</code></pre></div>
+<p>An <code>OID</code> line is an attribute or algorithm the CA wants. A <code>Type</code> line is an attribute with the
+values that follow it. An empty answer prints nothing.</p>
+<h3 id="csr">csr<a class="headerlink" href="#csr" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>csr<span class="w"> </span>-key<span class="w"> </span>key.pem<span class="w"> </span>-cn<span class="w"> </span><span class="s1">'John Doe'</span><span class="w"> </span>-emails<span class="w"> </span><span class="s1">'john@doe.com'</span><span class="w"> </span>-out<span class="w"> </span>csr.pem
+</code></pre></div>
+<p>Generates a request signed with <code>-key</code> or with the configured key. These options set its fields:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-cn</code></td>
+<td>Subject common name</td>
+</tr>
+<tr>
+<td><code>-sn</code></td>
+<td>Subject serial number</td>
+</tr>
+<tr>
+<td><code>-org</code>, <code>-ou</code></td>
+<td>Subject organization and organizational unit</td>
+</tr>
+<tr>
+<td><code>-country</code>, <code>-province</code>, <code>-locality</code>, <code>-street</code>, <code>-postalcode</code></td>
+<td>Subject address</td>
+</tr>
+<tr>
+<td><code>-dnsnames</code>, <code>-emails</code>, <code>-ips</code>, <code>-uris</code></td>
+<td>Subject alternative names</td>
+</tr>
+</tbody>
+</table>
+<p><code>-ou</code>, <code>-dnsnames</code>, <code>-emails</code>, <code>-ips</code> and <code>-uris</code> take several values separated by <code>-separator</code>.</p>
+<h3 id="enroll">enroll<a class="headerlink" href="#enroll" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>enroll<span class="w"> </span>-server<span class="w"> </span>localhost:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-csr<span class="w"> </span>csr.pem<span class="w"> </span>-out<span class="w"> </span>cert.pem
+</code></pre></div>
+<p>Sends the request in <code>-csr</code>. Without <code>-csr</code> it builds one from the <a href="#csr">csr</a> options and signs it
+with the key. Without a key it fails with <code>no private key provided</code>.</p>
+<p><code>-signingkey &lt;path&gt;</code> sets a separate key for the request. The client then adds the <code>tls-unique</code>
+value of the TLS 1.2 connection as the challenge password and signs the request with that key, as
+RFC 7030 section 3.5 describes. Over TLS 1.3 nothing is added.</p>
+<h3 id="reenroll">reenroll<a class="headerlink" href="#reenroll" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>reenroll<span class="w"> </span>-server<span class="w"> </span>localhost:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-key<span class="w"> </span>key.pem<span class="w"> </span>-certs<span class="w"> </span>certs.pem<span class="w"> </span>-out<span class="w"> </span>newcert.pem
+</code></pre></div>
+<p>Presents the certificate in <code>-certs</code> and its key in the TLS handshake. Without <code>-certs</code> it fails with
+<code>no client certificate provided</code>. Without <code>-csr</code> it copies the subject and the subject alternative
+names of the first certificate in <code>-certs</code> into a new request and signs it with <code>-key</code>. A renewal
+with a new key therefore needs <code>-csr</code>.</p>
+<h3 id="serverkeygen">serverkeygen<a class="headerlink" href="#serverkeygen" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>serverkeygen<span class="w"> </span>-server<span class="w"> </span>localhost:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-cn<span class="w"> </span><span class="s1">'Jane Doe'</span><span class="w"> </span>-out<span class="w"> </span>jane.pem<span class="w"> </span>-keyout<span class="w"> </span>jane-key.pem
+</code></pre></div>
+<p>Writes the certificate to <code>-out</code> and the key to <code>-keyout</code>, both to standard output by default. The
+key is written as a <code>PRIVATE KEY</code> block when it is PKCS #8 or as a <code>PKCS7</code> block when the server
+encrypted it. Any other key fails with <code>unrecognized private key format</code>.</p>
+<p>Without <code>-csr</code> the request is signed with a new temporary P-256 key, because the server ignores the
+key in the request.</p>
+<h3 id="tpmenroll">tpmenroll<a class="headerlink" href="#tpmenroll" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>tpmenroll<span class="w"> </span>-config<span class="w"> </span>tpm.cfg<span class="w"> </span>-server<span class="w"> </span>est.example.com:8443<span class="w"> </span>-explicit<span class="w"> </span>anchor.pem<span class="w"> </span>-out<span class="w"> </span>cert.pem
+</code></pre></div>
+<p>Requests a certificate for a key on a TPM 2.0 device, as <a href="../../client/tpm/">TPM enrollment</a>
+describes. The tool reads the public areas of the key and the endorsement key from the TPM, sends
+the request, activates the returned credential on the TPM and writes the decrypted certificate.</p>
+<p>The key must be a <a href="#tpm-keys">TPM key</a> in the configuration file. It also needs the endorsement key
+handle (<code>ek_handle</code>) and its certificates (<code>ek_certs</code> or <code>-ekcerts &lt;path&gt;</code>). Missing parts fail with
+errors such as <code>no endorsement key certificate(s) provided</code> or
+<code>private key in configuration file is not a TPM private key</code>.</p>
+<p>No test runs this command against a TPM. The library tests run <code>/tpmenroll</code> against the mock CA
+and decrypt the credential in software.</p>
+<h3 id="sampleconfig">sampleconfig<a class="headerlink" href="#sampleconfig" title="Permanent link">&para;</a></h3>
+<p>Prints a sample configuration file. <code>-hsm</code> prints one with an HSM key and <code>-tpm</code> one with a TPM key.
+<code>-out</code> writes it to a file.</p>
+<h2 id="configuration-file">Configuration file<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
+<p>Most options can be set in a JSON file given with <code>-config</code>. Options on the command line override
+the file. <code>-headers</code> replaces the whole <code>additional_headers</code> map.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"server"</span><span class="p">:</span><span class="w"> </span><span class="s2">"est.fake.domain:8443"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"additional_path_segment"</span><span class="p">:</span><span class="w"> </span><span class="s2">"someseg"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"additional_headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"Certificate-Template"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-template"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"Bit-Size"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3072"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"host_header"</span><span class="p">:</span><span class="w"> </span><span class="s2">"est.fake.host"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"username"</span><span class="p">:</span><span class="w"> </span><span class="s2">"someuser"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"password"</span><span class="p">:</span><span class="w"> </span><span class="s2">"somepass"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"private_key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"test_key.pem"</span>
+<span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Option</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server</code></td>
+<td><code>-server</code></td>
+</tr>
+<tr>
+<td><code>additional_path_segment</code></td>
+<td><code>-aps</code></td>
+</tr>
+<tr>
+<td><code>additional_headers</code></td>
+<td><code>-headers</code></td>
+</tr>
+<tr>
+<td><code>host_header</code></td>
+<td><code>-hostheader</code></td>
+</tr>
+<tr>
+<td><code>username</code>, <code>password</code></td>
+<td><code>-user</code>, <code>-pass</code></td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td><code>-token</code></td>
+</tr>
+<tr>
+<td><code>proxy</code></td>
+<td><code>-proxy</code></td>
+</tr>
+<tr>
+<td><code>explicit_anchor</code>, <code>implicit_anchor</code></td>
+<td><code>-explicit</code>, <code>-implicit</code></td>
+</tr>
+<tr>
+<td><code>client_certificates</code></td>
+<td><code>-certs</code></td>
+</tr>
+<tr>
+<td><code>private_key</code></td>
+<td><code>-key</code> or an <code>hsm</code> or <code>tpm</code> object</td>
+</tr>
+<tr>
+<td><code>signing_key</code></td>
+<td><code>-signingkey</code> or an <code>hsm</code> or <code>tpm</code> object</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A relative <code>-config</code> path is looked up in the current directory, then in the directory that
+  <code>ESTCLIENT_CONFIG_DIRECTORY</code> names when it is an absolute path, then in the home directory.</li>
+<li>Relative paths inside the file are relative to the directory of the file. Relative paths on the
+  command line are relative to the current directory.</li>
+<li><code>-insecure</code>, <code>-timeout</code>, <code>-csr</code>, the subject options such as <code>-cn</code> and the output options <code>-out</code>,
+  <code>-keyout</code>, <code>-separate</code>, <code>-separator</code>, <code>-roots</code>, <code>-rootout</code> and <code>-intermediates</code> have no key in
+  the file.</li>
+<li>When <code>signing_key</code> is set, <code>enroll</code>, <code>csr</code> and <code>tpmenroll</code> sign the requests they generate with
+  it instead of <code>private_key</code>. <code>reenroll</code> signs with <code>private_key</code> and <code>serverkeygen</code> with a
+  temporary P-256 key.</li>
+</ul>
+<h2 id="keys">Keys<a class="headerlink" href="#keys" title="Permanent link">&para;</a></h2>
+<h3 id="key-files">Key files<a class="headerlink" href="#key-files" title="Permanent link">&para;</a></h3>
+<p><code>-key</code> and <code>private_key</code> read a PEM file with a <code>PRIVATE KEY</code> (PKCS #8), <code>RSA PRIVATE KEY</code> or
+<code>EC PRIVATE KEY</code> block. PKCS #8 covers RSA, ECDSA, Ed25519 and ML-DSA keys. A block encrypted in
+the legacy PEM format, with a <code>Proc-Type: 4,ENCRYPTED</code> header, prompts for the passphrase. An
+<code>ENCRYPTED PRIVATE KEY</code> block is refused.</p>
+<h3 id="hardware-keys">Hardware keys<a class="headerlink" href="#hardware-keys" title="Permanent link">&para;</a></h3>
+<p>HSM and TPM keys can only be set in the configuration file. They work as the TLS client key and as
+the key that signs generated requests.</p>
+<p>An HSM key is reached through PKCS #11:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"private_key"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"hsm"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"pkcs11_library_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/usr/local/lib/softhsm/libsofthsm2.so"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"token_label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Testing Token"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"token_pin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1234"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"key_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>When <code>token_pin</code> is empty, the tool asks for the PIN on the terminal. CI runs the HSM tests with
+SoftHSM on Linux.</p>
+<h3 id="tpm-keys">TPM keys<a class="headerlink" href="#tpm-keys" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">"private_key"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"tpm"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"device"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/dev/tpmrm0"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"persistent_handle"</span><span class="p">:</span><span class="w"> </span><span class="mi">2164391936</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"storage_handle"</span><span class="p">:</span><span class="w"> </span><span class="mi">2164260865</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ek_handle"</span><span class="p">:</span><span class="w"> </span><span class="mi">2164326401</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"key_password"</span><span class="p">:</span><span class="w"> </span><span class="s2">"xyzzy"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"storage_password"</span><span class="p">:</span><span class="w"> </span><span class="s2">"opensesame"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ek_password"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abracadabra"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ek_certs"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/path/to/ek/certs/chain.pem"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"public_area"</span><span class="p">:</span><span class="w"> </span><span class="s2">"signing_key.pub"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"private_area"</span><span class="p">:</span><span class="w"> </span><span class="s2">"signing_key.priv"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The key is loaded from <code>persistent_handle</code> when it is set. Otherwise it is loaded under
+<code>storage_handle</code> from the <code>public_area</code> and <code>private_area</code> files. <code>ek_handle</code> and <code>ek_certs</code> are
+needed by <code>tpmenroll</code> only.</p>
+<h2 id="bootstrapping">Bootstrapping<a class="headerlink" href="#bootstrapping" title="Permanent link">&para;</a></h2>
+<p><code>-insecure</code> skips the check of the server certificate. Use it once to fetch the CA certificates of
+a new server, check them out of band, for example by their fingerprint and use them as <code>-explicit</code>
+from then on:</p>
+<div class="highlight"><pre><span></span><code>estclient<span class="w"> </span>cacerts<span class="w"> </span>-server<span class="w"> </span>localhost:8443<span class="w"> </span>-insecure<span class="w"> </span>-roots<span class="w"> </span>-out<span class="w"> </span>anchor.pem
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>openssl<span class="w"> </span>x509<span class="w"> </span>-in<span class="w"> </span>anchor.pem<span class="w"> </span>-noout<span class="w"> </span>-fingerprint<span class="w"> </span>-sha256
+</code></pre></div>
+<p>This does not work when the server certificate does not come from the EST CA, because the fetched
+roots then cannot verify the server.</p>
+<h2 id="output-files">Output files<a class="headerlink" href="#output-files" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Certificates are written in PEM. New files get mode 0666 and private keys 0600, both reduced by
+  the umask.</li>
+<li>An existing file is truncated. On Unix it first loses any permission that a new file would not
+  get, so an existing key file ends up readable by its owner only.</li>
+<li>An output path that is a symbolic link is refused with
+  <code>output file link.pem is a symbolic link, name its target instead</code>.</li>
+</ul>
+<h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>estclient</code> has no TLS-SRP options. Use the library's <code>SRPUsername</code> and <code>SRPPassword</code> instead.</li>
+<li>It does not show the <code>Retry-After</code> value of a deferred request. The error reads, for example,
+  <code>failed to get certificate: 202 triggered deferred response</code>.</li>
+<li>It has no option for <code>AllowCertificateChain</code> or <code>MaxResponseBody</code>, so the library defaults apply.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under the MIT License
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
