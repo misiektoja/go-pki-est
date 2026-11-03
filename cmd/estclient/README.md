@@ -1,8 +1,8 @@
 # estclient
 
-Application estclient is an EST client.
+Application estclient is an EST client built on the go-pki-est library.
 
-On Unix, `serverkeygen -keyout` removes group and other read and write
-permissions from an existing regular output file before writing the private
-key. This also removes intentionally configured group access. Windows file
-access remains controlled by its existing ACLs.
+The [estclient page](https://misiektoja.github.io/go-pki-est/tools/estclient/) of the
+documentation site describes every command, option and configuration field. `estclient help`
+lists the commands, `estclient help -common` adds the options and configuration rules every
+command shares and `estclient <command> -help` prints the options of one command.
