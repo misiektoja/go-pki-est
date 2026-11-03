@@ -1,0 +1,59 @@
+site_name: go-pki-est
+site_description: A Go library for Enrollment over Secure Transport (EST, RFC 7030) with a client, an embeddable server, TLS-SRP sign-in and post-quantum ML-DSA keys
+site_url: https://misiektoja.github.io/go-pki-est/
+repo_url: https://github.com/misiektoja/go-pki-est
+repo_name: misiektoja/go-pki-est
+copyright: Licensed under the MIT License
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# The pip requirements files live next to the pages for Dependabot but are not pages.
+exclude_docs: |
+  requirements.in
+  requirements.txt
+
+# The documentation build runs with --strict so every one of these findings fails the build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  # The pages include sections of the README and the command line tool READMEs, so they cannot drift.
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+
+nav:
+  - Overview: index.md
+  - Install: install.md
+  - Quickstart: quickstart.md
+  - Guides:
+      - Supported operations: guide/operations.md
+      - Embedding the server: guide/server.md
+      - Embedding the client: guide/client.md
+      - Post-quantum algorithms: guide/post-quantum.md
+  - Command line tools:
+      - estclient: tools/estclient.md
+      - estserver: tools/estserver.md
