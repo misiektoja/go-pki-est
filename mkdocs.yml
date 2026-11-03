@@ -37,23 +37,53 @@ validation:
 
 markdown_extensions:
   - admonition
-  # The pages include sections of the README and the command line tool READMEs, so they cannot drift.
+  # Go listings are included from example_test.go. go test compiles every example and runs those
+  # with an Output comment, so the code on the pages cannot drift from the library.
   - pymdownx.snippets:
       base_path: [.]
       check_paths: true
+      dedent_subsections: true
   - toc:
       permalink: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 nav:
   - Overview: index.md
-  - Install: install.md
-  - Quickstart: quickstart.md
-  - Guides:
-      - Supported operations: guide/operations.md
-      - Embedding the server: guide/server.md
-      - Embedding the client: guide/client.md
-      - Post-quantum algorithms: guide/post-quantum.md
+  - Getting started: getting-started.md
+  - Support matrix: support-matrix.md
+  - Architecture: architecture.md
+  - Client guide:
+      - Enrollment and renewal: client/enrollment.md
+      - Signing in: client/authentication.md
+      - Connections and hooks: client/connections.md
+      - TPM enrollment: client/tpm.md
+  - Server guide:
+      - Embedding the server: server/embedding.md
+      - The CA interface: server/ca.md
+      - Authentication: server/authentication.md
+      - TLS-SRP: server/tls-srp.md
+      - Refusals and limits: server/refusals-and-limits.md
+  - Post-quantum algorithms: post-quantum.md
   - Command line tools:
       - estclient: tools/estclient.md
       - estserver: tools/estserver.md
+  - Reference:
+      - Client fields: reference/client.md
+      - ServerConfig fields: reference/server-config.md
+      - Errors: reference/errors.md
+      - Compatibility policy: reference/compatibility.md
+  - Interoperability: interoperability.md
+  - Operations:
+      - Troubleshooting: operations/troubleshooting.md
+  - Security:
+      - Security model: security/security-model.md
+      - Verifying a release: security/verifying-releases.md
+  - Development:
+      - Development: development/development.md
+      - Testing: development/testing.md
+      - Release process: development/release-process.md
+  - Known limitations: known-limitations.md
