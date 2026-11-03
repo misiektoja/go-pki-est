@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ThalesIgnite/crypto11"
+	"github.com/eclipse-keypont/crypto11"
 	"golang.org/x/term"
 
 	"github.com/globalsign/pemfile"

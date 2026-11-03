@@ -61,7 +61,7 @@ See [Connections and hooks](../client/connections.md).
 
 * The TLS connection uses the `crypto/tls` defaults, which require TLS 1.2 or newer.
 * The client never follows redirects.
-* It sends `User-Agent: go-pki-est EST client v1.4.0 github.com/misiektoja/go-pki-est`, with the
+* It sends `User-Agent: go-pki-est EST client v1.4.1 github.com/misiektoja/go-pki-est`, with the
   library version.
 * It has no timeout of its own. The context of each call bounds the proxy tunnel, the handshake
   and the request.

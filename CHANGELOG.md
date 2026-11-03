@@ -3,6 +3,21 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.4.1] - 2026-11-03
+
+`estclient` finds HSM key pairs that it missed before and takes crypto11 from its new module path.
+
+### Changed
+- **`estclient` uses `github.com/eclipse-keypont/crypto11` v1.6.8 for HSM keys.** The crypto11
+  project moved there. It replaces `github.com/ThalesIgnite/crypto11` v1.2.1, the last release
+  under the old path.
+
+### Fixed
+- **`estclient` finds HSM key pairs whose public key has another label or is stored only as a
+  certificate.** It looks for a public key object with the same `key_id` and then for a
+  certificate with that ID. Both cases failed with `failed to find key pair` before. That error
+  now names the ID it searched for.
+
 ## [1.4.0] - 2026-10-26
 
 The client connects through HTTP proxies and signs in with bearer tokens, which the server checks
@@ -209,6 +224,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.4.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.1
 [1.4.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.0
 [1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
 [1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
