@@ -3,7 +3,7 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
-## [1.4.1] - TBD
+## [1.4.1] - 2026-11-03
 
 `estclient` finds HSM key pairs that it missed before and takes crypto11 from its new module path.
 
@@ -224,6 +224,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.4.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.1
 [1.4.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.0
 [1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
 [1.3.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.0
