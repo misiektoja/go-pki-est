@@ -5,7 +5,7 @@ contact_links:
     about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
   - name: Documentation
     url: https://misiektoja.github.io/go-pki-est/
-    about: Install, the quickstart, embedding the server and the client, the post-quantum limits and the command line tools.
+    about: Getting started, the client and server guides, the command line tools, troubleshooting and the known limitations.
   - name: Package documentation
     url: https://pkg.go.dev/github.com/misiektoja/go-pki-est
     about: Every exported type, the CA interface and the server configuration.
