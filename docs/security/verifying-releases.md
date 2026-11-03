@@ -11,15 +11,15 @@ Check a downloaded file against the checksums, then confirm that the release wor
 repository built it. `--ignore-missing` skips the listed files you did not download:
 
 ```bash
-shasum -a 256 -c --ignore-missing go-pki-est-v1.4.0_SHA256SUMS.txt
+shasum -a 256 -c --ignore-missing go-pki-est-v1.4.1_SHA256SUMS.txt
 ```
 
 ```bash
-gh attestation verify go-pki-est-v1.4.0-source.tar.gz --repo misiektoja/go-pki-est
+gh attestation verify go-pki-est-v1.4.1-source.tar.gz --repo misiektoja/go-pki-est
 ```
 
 To verify without network access to the attestation API, add
-`--bundle go-pki-est-v1.4.0.intoto.jsonl`.
+`--bundle go-pki-est-v1.4.1.intoto.jsonl`.
 
 `go get` and `go install` fetch the module through the Go module proxy and check it against the
 checksum database, so they need none of these files. The archives serve users who build from a

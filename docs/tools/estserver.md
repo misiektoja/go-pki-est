@@ -23,7 +23,7 @@ Without `-config` the server needs no files:
   under its root.
 
 It logs `Starting EST server FOR NON-PRODUCTION USE ONLY` when it starts and stops on `SIGINT`,
-`SIGTERM`, `SIGQUIT` or `SIGHUP`. `-version` prints `go-pki-est EST server 1.4.0` for that release.
+`SIGTERM`, `SIGQUIT` or `SIGHUP`. `-version` prints `go-pki-est EST server 1.4.1` for that release.
 
 ## Configuration file
 

@@ -26,7 +26,7 @@ estclient <command> [options]
 | `serverkeygen` | Request a key and a certificate from the server (section 4.4) |
 | `tpmenroll` | Request a certificate for a TPM key, see [tpmenroll](#tpmenroll) |
 | `sampleconfig` | Print a sample configuration file |
-| `version` | Print the version, such as `go-pki-est EST client 1.4.0` |
+| `version` | Print the version, such as `go-pki-est EST client 1.4.1` |
 | `help` | Print the command list. `estclient help -common` describes the common options |
 
 `estclient <command> -help` lists the options of a command. On failure the tool prints

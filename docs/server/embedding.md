@@ -67,7 +67,7 @@ prefix.
 
 Every response carries:
 
-* `Server: go-pki-est EST server v1.4.0`, with the library version
+* `Server: go-pki-est EST server v1.4.1`, with the library version
 * `Strict-Transport-Security: max-age=31536000`, unless `OmitStrictTransportSecurity` is set
 * `X-Content-Type-Options: nosniff`
 
