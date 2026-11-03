@@ -14,10 +14,10 @@ records. Third-party code is consumed through versioned packages.
 | golang.org/x/time | The server rate limiter | BSD-3-Clause |
 | github.com/globalsign/pemfile | PEM file reading in `estclient`, `estserver` and the mock CA | MIT |
 | github.com/globalsign/tpmkeys | TPM-resident private keys in `estclient` | MIT |
-| github.com/ThalesIgnite/crypto11 | PKCS #11 HSM private keys in `estclient` | MIT |
-| github.com/miekg/pkcs11 | The cgo PKCS #11 binding, through github.com/ThalesIgnite/crypto11 | BSD-3-Clause |
-| github.com/thales-e-security/pool | HSM session pooling, through github.com/ThalesIgnite/crypto11 | Apache-2.0 |
-| github.com/pkg/errors | Error wrapping, through github.com/ThalesIgnite/crypto11 | BSD-2-Clause |
+| github.com/eclipse-keypont/crypto11 | PKCS #11 HSM private keys in `estclient` | MIT |
+| github.com/miekg/pkcs11 | The cgo PKCS #11 binding, through github.com/eclipse-keypont/crypto11 | BSD-3-Clause |
+| github.com/thales-e-security/pool | HSM session pooling, through github.com/eclipse-keypont/crypto11 | Apache-2.0 |
+| github.com/pkg/errors | Error wrapping, through github.com/eclipse-keypont/crypto11 | BSD-2-Clause |
 | golang.org/x/term | Password prompts in `estclient` | BSD-3-Clause |
 | golang.org/x/crypto | TLS message parsing and terminal input, through github.com/misiektoja/go-tls-srp and github.com/globalsign/pemfile | BSD-3-Clause |
 | golang.org/x/sys | System calls, through golang.org/x/term, github.com/google/go-tpm and filippo.io/bigmod | BSD-3-Clause |
