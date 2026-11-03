@@ -2032,7 +2032,7 @@ a PKCS #11 HSM or on a TPM 2.0 device.</p>
 </tr>
 <tr>
 <td><code>version</code></td>
-<td>Print the version, such as <code>go-pki-est EST client 1.4.0</code></td>
+<td>Print the version, such as <code>go-pki-est EST client 1.4.1</code></td>
 </tr>
 <tr>
 <td><code>help</code></td>
@@ -2322,6 +2322,9 @@ the key that signs generated requests.</p>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
+<p><code>key_id</code> is the PKCS #11 <code>CKA_ID</code> of the private key written as a number, so <code>1</code> matches the ID
+<code>01</code>. The public key comes from a public key object with the same ID or, when the token has none,
+from a certificate with that ID.</p>
 <p>When <code>token_pin</code> is empty, the tool asks for the PIN on the terminal. CI runs the HSM tests with
 SoftHSM on Linux.</p>
 <h3 id="tpm-keys">TPM keys<a class="headerlink" href="#tpm-keys" title="Permanent link">&para;</a></h3>

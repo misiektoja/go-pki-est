@@ -1503,12 +1503,12 @@
 </ul>
 <p>Check a downloaded file against the checksums, then confirm that the release workflow of this
 repository built it. <code>--ignore-missing</code> skips the listed files you did not download:</p>
-<div class="highlight"><pre><span></span><code>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>-c<span class="w"> </span>--ignore-missing<span class="w"> </span>go-pki-est-v1.4.0_SHA256SUMS.txt
+<div class="highlight"><pre><span></span><code>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>-c<span class="w"> </span>--ignore-missing<span class="w"> </span>go-pki-est-v1.4.1_SHA256SUMS.txt
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>attestation<span class="w"> </span>verify<span class="w"> </span>go-pki-est-v1.4.0-source.tar.gz<span class="w"> </span>--repo<span class="w"> </span>misiektoja/go-pki-est
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>attestation<span class="w"> </span>verify<span class="w"> </span>go-pki-est-v1.4.1-source.tar.gz<span class="w"> </span>--repo<span class="w"> </span>misiektoja/go-pki-est
 </code></pre></div>
 <p>To verify without network access to the attestation API, add
-<code>--bundle go-pki-est-v1.4.0.intoto.jsonl</code>.</p>
+<code>--bundle go-pki-est-v1.4.1.intoto.jsonl</code>.</p>
 <p><code>go get</code> and <code>go install</code> fetch the module through the Go module proxy and check it against the
 checksum database, so they need none of these files. The archives serve users who build from a
 downloaded source tree.</p>
