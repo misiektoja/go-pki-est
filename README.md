@@ -7,6 +7,7 @@
 [![Supply chain](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-est/actions/workflows/supply-chain.yml)
 [![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fgo-pki-est&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/go-pki-est)
 
+<!-- --8<-- [start:intro] -->
 Go library for **Enrollment over Secure Transport (EST)**, the certificate enrollment protocol
 defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 
@@ -14,6 +15,7 @@ defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 * an `http.Handler` that serves EST in front of your CA (`NewRouter` and the `CA` interface)
 * `estclient`, a command line client built on the library
 * `estserver`, a server with a mock CA for testing and development
+<!-- --8<-- [end:intro] -->
 
 ## Contents
 
@@ -26,6 +28,7 @@ defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 
 ## Install
 
+<!-- --8<-- [start:install] -->
 ```bash
 go get github.com/misiektoja/go-pki-est
 ```
@@ -58,9 +61,11 @@ gh attestation verify go-pki-est-v1.4.0-source.tar.gz --repo misiektoja/go-pki-e
 ```
 
 To verify offline, add `--bundle go-pki-est-v1.4.0.intoto.jsonl`.
+<!-- --8<-- [end:install] -->
 
 ## Quickstart
 
+<!-- --8<-- [start:quickstart] -->
 ### Starting the server
 
 When started with no configuration file, the EST server listens on `localhost:8443` and generates
@@ -155,9 +160,11 @@ use that chain to reenroll:
 Note that when we omit the `-csr` option when reenrolling, the EST client
 automatically generates a CSR for us by copying the subject field and subject
 alternative name extension from the certificate we're renewing.
+<!-- --8<-- [end:quickstart] -->
 
 ## Features
 
+<!-- --8<-- [start:operations] -->
 | Operation | Coverage |
 | --- | --- |
 | `/cacerts` | CA certificate distribution |
@@ -173,9 +180,11 @@ authentication on top of TLS client certificates. Following RFC 8951, receivers 
 
 `/serverkeygen` returns any PKCS#8 key the CA provides, including ML-KEM. It ignores the request
 signature, because RFC 7030 section 4.4.1 tells the server to.
+<!-- --8<-- [end:operations] -->
 
 ### Embedding the server
 
+<!-- --8<-- [start:server] -->
 `NewRouter` returns an `http.Handler` that serves EST next to the host application's own
 endpoints. These [`ServerConfig`](https://pkg.go.dev/github.com/misiektoja/go-pki-est#ServerConfig)
 fields hand decisions to the host:
@@ -210,9 +219,11 @@ as libest does with `--srp`. A host that terminates TLS-SRP passes the username 
 must choose it by the signed-in identity, not by the CSR subject. The server also leaves
 revocation checks to the CA. `estserver` serves TLS-SRP and the client signs in with it through
 [go-tls-srp](https://github.com/misiektoja/go-tls-srp).
+<!-- --8<-- [end:server] -->
 
 ### Embedding the client
 
+<!-- --8<-- [start:client] -->
 These [`Client`](https://pkg.go.dev/github.com/misiektoja/go-pki-est#Client) fields let an
 application watch and relax the client:
 
@@ -239,9 +250,11 @@ application watch and relax the client:
   CA certificates.
 
 The client does not follow redirects. A 3xx answer is returned as an error with its status.
+<!-- --8<-- [end:client] -->
 
 ### Post-quantum algorithms
 
+<!-- --8<-- [start:post-quantum] -->
 **ML-DSA** (FIPS 204, RFC 9881) works for enrollment, renewal and `/serverkeygen` in the library
 and in `estclient`. The tests use ML-DSA-65. Limits:
 
@@ -258,9 +271,11 @@ and in `estclient`. The tests use ML-DSA-65. Limits:
 * A certificate that an **SLH-DSA or composite ML-DSA CA** signed renews over TLS only with
   `VerifyClientCertificate`, because `crypto/x509` cannot verify it. The listener must then request
   the client certificate without verifying it, with `tls.RequestClientCert`.
+<!-- --8<-- [end:post-quantum] -->
 
 ## Credits
 
+<!-- --8<-- [start:credits] -->
 This project began as a fork of [globalsign/est](https://github.com/globalsign/est) by
 [GMO GlobalSign](https://www.globalsign.com/). The protocol implementation, both command line tools
 and the test server come from that project. The first fixes made here were offered upstream in
@@ -268,8 +283,9 @@ and the test server come from that project. The first fixes made here were offer
 [globalsign/est#66](https://github.com/globalsign/est/pull/66).
 
 This fork is maintained separately so fixes and new features ship in its own releases without
-waiting for upstream review. Changes that suit upstream are still offered there. [NOTICE](NOTICE)
-records the attribution.
+waiting for upstream review. Changes that suit upstream are still offered there.
+[NOTICE](https://github.com/misiektoja/go-pki-est/blob/main/NOTICE) records the attribution.
+<!-- --8<-- [end:credits] -->
 
 ## Support and contributing
 
