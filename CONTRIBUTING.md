@@ -24,20 +24,20 @@ GLOBALSIGN_EST_SKIP=hsm,tpm make test
 
 `GLOBALSIGN_EST_SKIP=hsm,tpm` skips the tests that need SoftHSM or a TPM device. CI runs the HSM tests on Linux with SoftHSM. No CI job has a TPM.
 
-Protocol changes need negative tests and an RFC citation. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments, the README and [CHANGELOG.md](CHANGELOG.md).
+Protocol changes need negative tests and an RFC citation. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments, the documentation site and [CHANGELOG.md](CHANGELOG.md).
 
 Every change must comply with the Developer Certificate of Origin 1.1. Use `git commit -s` only when you intend to provide that certification.
 
 ## Documentation site
 
-The site at [misiektoja.github.io/go-pki-est](https://misiektoja.github.io/go-pki-est/) is built with MkDocs and the Material theme from `docs/` and `mkdocs.yml`. Its pages include the README sections between the `--8<--` markers and the command line tool READMEs under `cmd/`, so edit the text there. Set `PYTHON` when the MkDocs toolchain lives in a virtual environment:
+The site at [misiektoja.github.io/go-pki-est](https://misiektoja.github.io/go-pki-est/) is built with MkDocs and the Material theme from `docs/` and `mkdocs.yml`. The Go listings on its pages come from the sections between `// --8<--` markers in `example_test.go`, so write new Go examples there. `go test` compiles every example and runs those with an `// Output:` comment. Set `PYTHON` when the MkDocs toolchain lives in a virtual environment:
 
 ```bash
 make docs-deps PYTHON=.venv/bin/python
 make docs-serve PYTHON=.venv/bin/python
 ```
 
-`make docs-build` runs with `--strict`, so a broken link, a missing anchor or a page absent from the navigation fails the build. Links in the included README sections must be absolute, because a relative link such as `CHANGELOG.md` does not resolve on the site. The [documentation workflow](.github/workflows/docs.yml) runs the same build on every change to the documentation and publishes the site from `main` to the `gh-pages` branch.
+`make docs-build` runs with `--strict`, so a broken link, a missing anchor or a page absent from the navigation fails the build. Link files outside `docs/`, such as `CHANGELOG.md`, with absolute GitHub URLs, because relative links to them do not resolve on the site. The [documentation workflow](.github/workflows/docs.yml) runs the same build on every change to the documentation and publishes the site from `main` to the `gh-pages` branch.
 
 The toolchain is pinned with hashes in `docs/requirements.txt`, which `make docs-deps` installs in hash-checking mode. The direct dependencies live in `docs/requirements.in`. To change a version, edit that file and run `make docs-requirements`, which needs pip-tools in the `PYTHON` environment.
 
@@ -60,7 +60,7 @@ git tag -s v1.1.0 -m 'v1.1.0'
 git push origin main v1.1.0
 ```
 
-The release workflow repeats the check on the tag, builds source archives, an SBOM and checksums, attests their provenance and creates a draft release with the changelog section as its description. Review the draft and publish it. [Verifying a release](README.md#verifying-a-release) shows how users check the artifacts. Do not draft a release in the GitHub UI. That creates the tag and the workflow refuses to rebuild a published release.
+The release workflow repeats the check on the tag, builds source archives, an SBOM and checksums, attests their provenance and creates a draft release with the changelog section as its description. Review the draft and publish it. [Verifying a release](https://misiektoja.github.io/go-pki-est/security/verifying-releases/) shows how users check the artifacts. Do not publish a release in the GitHub UI. Publishing creates the tag, which starts the workflow. The workflow then refuses to rebuild a release that is already published.
 
 Push only the new tag. Clones made from globalsign/est hold its `v1.0.x` tags. They declare the old module path, so `go get` cannot fetch them under this one.
 
