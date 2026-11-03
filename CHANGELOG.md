@@ -42,7 +42,7 @@ CA certificate cache. `estserver` listens on localhost by default.
   a limit.
 - **`estserver` drops slow and idle connections.** A request must arrive within 60 seconds and an
   idle connection closes after 120 seconds.
-- **`estclient` refuses symbolic links as output files.** `-out`, `-keyout` and `-separateout`
+- **`estclient` refuses symbolic links as output files.** `-out`, `-keyout` and `-separate`
   followed them, so a planted link could send a private key to another file.
 
 ## [1.3.1] - 2026-10-22
