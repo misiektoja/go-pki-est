@@ -11,7 +11,7 @@ require (
 	github.com/misiektoja/go-tls-srp v0.2.1
 	github.com/smallstep/scep v0.0.0-20250318231241-a25cabb69492
 	go.mozilla.org/pkcs7 v0.10.0
-	golang.org/x/term v0.47.0
+	golang.org/x/term v0.48.0
 	golang.org/x/time v0.16.0
 )
 
@@ -21,5 +21,5 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/thales-e-security/pool v0.0.2 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 )
