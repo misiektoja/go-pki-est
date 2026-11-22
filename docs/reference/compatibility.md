@@ -23,9 +23,10 @@ change.
 
 ## Go version
 
-`go.mod` declares the minimum Go version, currently 1.27.3. CI builds and tests with the version in
+`go.mod` declares the minimum Go version, currently 1.27.4. CI builds and tests with the version in
 `go.mod`. Go 1.27.3 fixes GO-2026-6809 in `crypto/x509`, which the server reaches when it verifies
-client certificates.
+client certificates. Go 1.27.4 fixes GO-2026-6859 in `net/http`, a race that can crash an HTTP/1
+server using `http.MaxBytesReader`, which the server applies to request bodies.
 
 ## Moving from globalsign/est
 
@@ -35,7 +36,7 @@ v1.0.7, so v1.1.0 is the first release here.
 1. Replace the import path `github.com/globalsign/est` with `github.com/misiektoja/go-pki-est`.
    The package name stays `est`.
 2. Read the changelog sections from 1.1.0 on. The changes that affect existing code:
-    * Go 1.27.3 or newer is required. globalsign/est v1.0.7 declared Go 1.23.0.
+    * Go 1.27.4 or newer is required. globalsign/est v1.0.7 declared Go 1.23.0.
     * `X-Real-IP` and `X-Forwarded-For` are ignored unless `TrustProxyHeaders` is set.
       `True-Client-IP` stays ignored, as in v1.0.7.
     * A 405 answer carries an `Allow` header that lists the supported methods.

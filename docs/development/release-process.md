@@ -24,7 +24,7 @@ The tests fail when the tools and the library report different versions.
 2. Merge `dev` into `main` and run the release check there:
 
     ```bash
-    GLOBALSIGN_EST_SKIP=hsm,tpm VERSION=v1.4.1 make release-check
+    GLOBALSIGN_EST_SKIP=hsm,tpm VERSION=v1.4.2 make release-check
     ```
 
     It exports `HEAD` with `git archive`, verifies, builds, vets and tests the export and imports it
@@ -35,8 +35,8 @@ The tests fail when the tools and the library report different versions.
 3. Create a signed tag and push `main` and the tag:
 
     ```bash
-    git tag -s v1.4.1 -m 'v1.4.1'
-    git push origin main v1.4.1
+    git tag -s v1.4.2 -m 'v1.4.2'
+    git push origin main v1.4.2
     ```
 
 4. The release workflow repeats the check on the tag, builds the source archives, the SBOM and the

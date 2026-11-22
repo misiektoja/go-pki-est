@@ -6,7 +6,7 @@ description: "Set up a go-pki-est checkout, learn the repository layout, run the
 
 ## Setup
 
-You need Go at the version in `go.mod`, 1.27.3 or newer. The HSM tests also need SoftHSM 2 and the
+You need Go at the version in `go.mod`, 1.27.4 or newer. The HSM tests also need SoftHSM 2 and the
 TPM tests a TPM 2.0 device. Without them, skip those tests as [Testing](testing.md) shows.
 
 ```bash
