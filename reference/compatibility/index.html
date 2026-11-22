@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -1642,9 +1642,10 @@ change.</p>
   that a peer can observe, such as a new status code or header, is listed there.</li>
 </ul>
 <h2 id="go-version">Go version<a class="headerlink" href="#go-version" title="Permanent link">&para;</a></h2>
-<p><code>go.mod</code> declares the minimum Go version, currently 1.27.3. CI builds and tests with the version in
+<p><code>go.mod</code> declares the minimum Go version, currently 1.27.4. CI builds and tests with the version in
 <code>go.mod</code>. Go 1.27.3 fixes GO-2026-6809 in <code>crypto/x509</code>, which the server reaches when it verifies
-client certificates.</p>
+client certificates. Go 1.27.4 fixes GO-2026-6859 in <code>net/http</code>, a race that can crash an HTTP/1
+server using <code>http.MaxBytesReader</code>, which the server applies to request bodies.</p>
 <h2 id="moving-from-globalsignest">Moving from globalsign/est<a class="headerlink" href="#moving-from-globalsignest" title="Permanent link">&para;</a></h2>
 <p>go-pki-est continues globalsign/est v1.0.7 under a new module path. Its versions continue from
 v1.0.7, so v1.1.0 is the first release here.</p>
@@ -1652,7 +1653,7 @@ v1.0.7, so v1.1.0 is the first release here.</p>
 <li>Replace the import path <code>github.com/globalsign/est</code> with <code>github.com/misiektoja/go-pki-est</code>.
    The package name stays <code>est</code>.</li>
 <li>Read the changelog sections from 1.1.0 on. The changes that affect existing code:<ul>
-<li>Go 1.27.3 or newer is required. globalsign/est v1.0.7 declared Go 1.23.0.</li>
+<li>Go 1.27.4 or newer is required. globalsign/est v1.0.7 declared Go 1.23.0.</li>
 <li><code>X-Real-IP</code> and <code>X-Forwarded-For</code> are ignored unless <code>TrustProxyHeaders</code> is set.
   <code>True-Client-IP</code> stays ignored, as in v1.0.7.</li>
 <li>A 405 answer carries an <code>Allow</code> header that lists the supported methods.</li>
@@ -1733,7 +1734,7 @@ cannot fetch those tags under the new path.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
