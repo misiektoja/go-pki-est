@@ -9,7 +9,7 @@ renews it. It then shows the same steps in Go. Everything runs on one machine.
 
 ## What you need
 
-* Go 1.27.3 or newer
+* Go 1.27.4 or newer
 * OpenSSL, to print a fingerprint in step 3 and to generate a private key in step 4
 * Port 8443 free on the local machine
 

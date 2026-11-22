@@ -32,7 +32,7 @@ defined in [RFC 7030](https://www.rfc-editor.org/rfc/rfc7030). It provides:
 go get github.com/misiektoja/go-pki-est
 ```
 
-The package name is `est`. Requires Go 1.27.3 or newer.
+The package name is `est`. Requires Go 1.27.4 or newer.
 
 The command line tools install with:
 

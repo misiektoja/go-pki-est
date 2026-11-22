@@ -31,7 +31,7 @@ what is covered.
 go get github.com/misiektoja/go-pki-est
 ```
 
-The module needs Go 1.27.3 or newer. The package is imported as `est`. The command line tools
+The module needs Go 1.27.4 or newer. The package is imported as `est`. The command line tools
 install with:
 
 ```bash
