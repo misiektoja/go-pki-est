@@ -1,6 +1,6 @@
 module github.com/misiektoja/go-pki-est
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/eclipse-keypont/crypto11 v1.6.8
