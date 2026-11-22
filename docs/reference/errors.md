@@ -1,3 +1,7 @@
+---
+description: "Reference for the go-pki-est est.Error interface, the errors the client returns, the errors the server sends and errors from NewRouter."
+---
+
 # Errors
 
 ## The est.Error interface

@@ -1,3 +1,7 @@
+---
+description: "Support matrix for go-pki-est listing EST operations, authentication methods, key and signature types, encoding and platforms with test status."
+---
+
 # Support matrix
 
 What the client, the server and the command line tools implement and how it is tested.

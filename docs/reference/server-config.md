@@ -1,3 +1,7 @@
+---
+description: "Reference for est.ServerConfig, the settings passed to NewRouter, with fields, hook signatures, the CA interface, context helpers and fixed limits."
+---
+
 # ServerConfig
 
 `NewRouter(&est.ServerConfig{...})` returns the EST handler. Only `CA` is required for a working

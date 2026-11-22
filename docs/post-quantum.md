@@ -1,3 +1,7 @@
+---
+description: "Use ML-DSA, composite ML-DSA, SLH-DSA and ML-KEM with go-pki-est EST requests and certificates. Shows what depends on Go crypto support."
+---
+
 # Post-quantum algorithms
 
 What works depends on what Go's `crypto/x509` and `crypto/tls` support. Go 1.27 has ML-DSA

@@ -1,3 +1,7 @@
+---
+description: "Run the go-pki-est tests with make test, skip the HSM and TPM tests when SoftHSM 2 or a TPM is missing and see what runs in CI."
+---
+
 # Testing
 
 ```bash

@@ -1,3 +1,7 @@
+---
+description: "Use the estclient command line EST client to fetch CA certificates, enroll, renew and request server-generated keys, with files, HSM or TPM keys."
+---
+
 # estclient
 
 `estclient` is a command line EST client built on the library. It fetches CA certificates and CSR

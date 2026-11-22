@@ -1,3 +1,7 @@
+---
+description: "Requests the go-pki-est router refuses before the CA is called and how to record them, plus limits on request size, rate, time and hosts."
+---
+
 # Refusals and limits
 
 The router refuses some requests itself, before or instead of calling the CA. This page lists those

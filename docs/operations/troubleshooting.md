@@ -1,3 +1,7 @@
+---
+description: "Fix go-pki-est and estclient errors for connecting, renewing, enrolling and TLS-SRP, with the message you see and the likely cause."
+---
+
 # Troubleshooting
 
 Each entry starts with a message as `estclient` or the library reports it. The library returns the

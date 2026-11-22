@@ -1,3 +1,7 @@
+---
+description: "Set up a go-pki-est checkout, learn the repository layout, run the checks and build the documentation site."
+---
+
 # Development
 
 ## Setup

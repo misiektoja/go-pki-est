@@ -1,3 +1,7 @@
+---
+description: "Serve EST over TLS-SRP (RFC 5054) with go-pki-est so devices sign in with a username and password, including verifier storage and cipher suites."
+---
+
 # TLS-SRP
 
 RFC 7030 section 3.3.3 lets a client sign in with TLS-SRP (RFC 5054) instead of a certificate. The

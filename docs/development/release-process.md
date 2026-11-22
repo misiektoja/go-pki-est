@@ -1,3 +1,7 @@
+---
+description: "How a go-pki-est release is made from a version tag, with semantic versioning, the places that carry the version and the changelog."
+---
+
 # Release process
 
 A release starts when a version tag reachable from `main` is pushed. `CHANGELOG.md` has one section

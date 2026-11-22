@@ -1,3 +1,7 @@
+---
+description: "Configure how the go-pki-est EST client connects: proxies, connection and request hooks, response limits, redirects, timeouts and connection reuse."
+---
+
 # Connections and hooks
 
 How the client reaches the server, what it accepts in a response and how a program can watch it.

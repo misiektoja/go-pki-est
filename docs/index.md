@@ -1,3 +1,8 @@
+---
+title: "EST client and server library for Go (RFC 7030)"
+description: "go-pki-est is a Go library with an EST client and server for certificate enrollment (RFC 7030), plus estclient and estserver command line tools."
+---
+
 # go-pki-est
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/go-pki-est?style=flat-square&color=blue)](https://github.com/misiektoja/go-pki-est/releases)

@@ -1,3 +1,7 @@
+---
+description: "Reference for the go-pki-est est.Client type, covering its methods, server and trust fields, client authentication, requests and fixed behavior."
+---
+
 # Client
 
 `est.Client` runs EST operations against one server. Every field is optional except `Host`. A

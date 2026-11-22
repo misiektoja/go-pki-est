@@ -1,3 +1,7 @@
+---
+description: "The go-pki-est compatibility policy: semantic versioning, the public API, upgrading, the supported Go version and moving from globalsign/est."
+---
+
 # Compatibility
 
 ## Versioning

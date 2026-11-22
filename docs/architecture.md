@@ -1,3 +1,7 @@
+---
+description: "How go-pki-est is built: the EST client, the router in front of your CA interface, how each side handles a request and what stays with the host."
+---
+
 # Architecture
 
 go-pki-est is a protocol layer. The client turns Go calls into EST requests. The server turns EST

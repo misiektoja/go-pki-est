@@ -1,3 +1,7 @@
+---
+description: "Start the bundled go-pki-est test server, enroll and renew a certificate with the estclient command line tool, then repeat the steps in Go."
+---
+
 # Getting started
 
 This page starts the bundled test server, enrolls a certificate with the command line client and

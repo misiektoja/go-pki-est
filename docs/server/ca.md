@@ -1,3 +1,7 @@
+---
+description: "Implement the go-pki-est CA interface that signs EST requests, with the methods CACerts, CSRAttrs, Enroll, Reenroll, ServerKeyGen and TPMEnroll."
+---
+
 # The CA interface
 
 The router hands every EST operation that passed its checks to a value that implements `est.CA`.

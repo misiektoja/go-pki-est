@@ -1,3 +1,7 @@
+---
+description: "The go-pki-est security model: roles, what the router and the client enforce, what the host must do, assumptions and supported versions."
+---
+
 # Security model
 
 This page says what the library protects, what it leaves to the host and what it assumes. Report

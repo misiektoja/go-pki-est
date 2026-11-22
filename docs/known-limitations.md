@@ -1,3 +1,7 @@
+---
+description: "Known limitations of go-pki-est: no EST fullcmc, no CMS error responses, post-quantum gaps, server and command line tool limits."
+---
+
 # Known limitations
 
 ## Protocol

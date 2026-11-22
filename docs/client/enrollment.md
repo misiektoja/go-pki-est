@@ -1,3 +1,7 @@
+---
+description: "Use est.Client to fetch CA certificates, enroll, renew, request a server-generated key and read CSR attributes from an EST server (RFC 7030)."
+---
+
 # Enrollment and renewal
 
 `est.Client` runs one EST operation per method call. Each call opens its own connection, runs the

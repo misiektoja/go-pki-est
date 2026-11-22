@@ -1,3 +1,7 @@
+---
+description: "Run estserver, the go-pki-est test EST server with a mock CA, with its configuration file, special path segments and TLS-SRP users."
+---
+
 # estserver
 
 `estserver` serves EST in front of a mock CA. It is for testing clients and for development, not

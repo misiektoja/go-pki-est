@@ -1,3 +1,7 @@
+---
+description: "Enroll a key held on a TPM 2.0 device with the go-pki-est /tpmenroll operation, which protects the certificate with the endorsement key."
+---
+
 # TPM enrollment
 
 `/tpmenroll` is an operation outside RFC 7030 that came with globalsign/est. It issues a

@@ -1,3 +1,7 @@
+---
+description: "Control who may enroll with the go-pki-est router: Basic and bearer token hooks, the 401 challenge, renewal checks, password renewal and proof of possession."
+---
+
 # Authentication
 
 The router decides who may run an operation with two optional hooks and checks renewals itself.

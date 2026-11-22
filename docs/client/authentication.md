@@ -1,3 +1,7 @@
+---
+description: "Sign in to an EST server from go-pki-est with a client certificate, HTTP Basic, a bearer token or TLS-SRP. Renewal without the certificate works too."
+---
+
 # Signing in
 
 EST servers identify clients by a TLS client certificate, an HTTP credential or a TLS-SRP

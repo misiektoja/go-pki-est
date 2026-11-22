@@ -1,3 +1,7 @@
+---
+description: "Verify a go-pki-est release by checking its SHA-256 checksums, the CycloneDX SBOM and the build attestation with the gh command."
+---
+
 # Verifying a release
 
 Each [GitHub release](https://github.com/misiektoja/go-pki-est/releases) carries:

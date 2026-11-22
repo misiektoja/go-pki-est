@@ -1,3 +1,7 @@
+---
+description: "Embed an EST server in your Go program with est.NewRouter, from a complete example to the TLS listener, endpoints, headers, logging and load balancers."
+---
+
 # Embedding the server
 
 `NewRouter` builds an `http.Handler` that serves EST in front of your CA. You supply the CA as an
