@@ -3,6 +3,14 @@
 Notable changes to go-pki-est. Entries for 1.0.7 and earlier come from
 [globalsign/est](https://github.com/globalsign/est).
 
+## [1.4.2] - 2026-11-22
+
+The module needs Go 1.27.4, which fixes a crash in `net/http` that the server can reach.
+
+### Changed
+- **Go 1.27.4** or newer is required. It fixes GO-2026-6859, a race in `net/http` that can crash
+  an HTTP/1 server using `http.MaxBytesReader`, which the server applies to request bodies.
+
 ## [1.4.1] - 2026-11-03
 
 `estclient` finds HSM key pairs that it missed before and takes crypto11 from its new module path.
@@ -224,6 +232,7 @@ libest and Bouncy Castle and several server and command line defects.
 ### Added
 - Initial release
 
+[1.4.2]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.2
 [1.4.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.1
 [1.4.0]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.4.0
 [1.3.1]: https://github.com/misiektoja/go-pki-est/releases/tag/v1.3.1
