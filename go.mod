@@ -9,7 +9,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/go-tpm v0.9.8
 	github.com/misiektoja/go-tls-srp v0.2.1
-	github.com/smallstep/scep v0.0.0-20250318231241-a25cabb69492
+	github.com/smallstep/scep v0.1.0
 	go.mozilla.org/pkcs7 v0.10.0
 	golang.org/x/term v0.48.0
 	golang.org/x/time v0.16.0
